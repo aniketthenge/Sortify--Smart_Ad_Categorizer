@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Classify{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Classify an ad</h1>
+    <p class="muted">Paste any ad copy (English, Marathi or Hindi) to see the predicted category and why.</p>
+  </div>
+</div>
+<div class="grid2">
+  <form class="card form" method="post">
+    <label>Headline *<input name="title" required value="{{ form.title }}" placeholder="e.g. 2 & 3 BHK flats in Hinjewadi starting ₹65 lakh"></label>
+    <label>Description<textarea name="description" rows="3" placeholder="Optional body text">{{ form.description }}</textarea></label>
+    <label>Advertiser<input name="advertiser" value="{{ form.advertiser }}" placeholder="e.g. Kolte Patil"></label>
+    <label>Landing URL / domain<input name="url" value="{{ form.url }}" placeholder="e.g. koltepatil.com"></label>
+    <div class="row">
+      <button class="btn primary">Classify</button>
+      <span class="muted small">Try:
+        <a href="#" class="example" data-t="Crack MPSC with India's top faculty, new batch starts Monday">education</a>,
+        <a href="#" class="example" data-t="नवी मुंबईत लवकर उपलब्ध घरे">Marathi real estate</a>,
+        <a href="#" class="example" data-t="She Took Revenge On Her Ex By Losing Weight. The Result Was Incredible">clickbait</a>
+      </span>
+    </div>
+  </form>
+
+  <section class="card">
+    {% if result %}
+      <div class="result-head">
+        <span class="tag big" style="--c:{{ colors.get(result.category, '#999') }}">{{ result.category }}</span>
+        <b>{{ '%.0f'|format(result.confidence * 100) }}%</b>
+        {% if result.needs_review %}<span class="pill failed">low confidence</span>{% endif %}
+      </div>
+      <h4>Top candidates</h4>
+      <div class="bars">
+        {% for alt in result.alternatives %}
+        <div class="bar-row">
+          <span class="bar-label">{{ alt.category }}</span>
+          <span class="bar-track"><span class="bar" style="width:{{ (alt.score * 100)|round(1) }}%; background:{{ colors.get(alt.category, '#999') }}"></span></span>
+          <span class="bar-val">{{ '%.0f'|format(alt.score * 100) }}%</span>
+        </div>
+        {% endfor %}
+      </div>
+      <h4>Why</h4>
+      <ul class="why">
+        <li>Method: <b>{{ result.method }}</b> (model confidence {{ '%.0f'|format(result.ml_confidence * 100) }}%)</li>
+        {% if result.matched_keywords %}<li>Keyword rules matched: {% for k in result.matched_keywords %}<code>{{ k }}</code> {% endfor %}</li>{% endif %}
+        {% if result.top_terms %}<li>Most influential model terms: {% for k in result.top_terms %}<code>{{ k }}</code> {% endfor %}</li>{% endif %}
+      </ul>
+    {% else %}
+      <p class="muted">The result will appear here.</p>
+      <h4>API</h4>
+      <pre class="log">curl -X POST http://127.0.0.1:5000/api/classify \
+  -H "Content-Type: application/json" \
+  -d "{\"title\": \"Term insurance on easy EMI\", \"advertiser\": \"Policybazaar\"}"</pre>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+document.querySelectorAll('.example').forEach(a => a.onclick = e => {
+  e.preventDefault(); const f = document.querySelector('form.form');
+  f.title.value = a.dataset.t; f.description.value = ''; f.advertiser.value = ''; f.url.value = ''; f.submit();
+});
+</script>{% endblock %}

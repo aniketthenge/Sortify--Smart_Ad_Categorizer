@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Ads{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Ads <span class="muted">({{ ads|length }})</span></h1>
+    <p class="muted">Change a category from the drop-down to correct the model, then retrain it on the Model page.</p>
+  </div>
+</div>
+
+<form class="filters card" method="get">
+  <input type="search" name="q" placeholder="Search title, advertiser, domain…" value="{{ f.q }}">
+  <select name="category">
+    <option value="">All categories</option>
+    {% for c in categories %}<option {{ 'selected' if f.category == c }}>{{ c }}</option>{% endfor %}
+  </select>
+  <select name="network">
+    <option value="">All networks</option>
+    {% for n in ['Taboola', 'Google Ads'] %}<option {{ 'selected' if f.network == n }}>{{ n }}</option>{% endfor %}
+  </select>
+  <label class="check"><input type="checkbox" name="review" value="1" {{ 'checked' if review }}> Needs review only</label>
+  <button class="btn primary">Filter</button>
+  <a class="btn" href="{{ url_for('ads') }}">Reset</a>
+</form>
+
+<div class="ad-list">
+{% for a in ads %}
+  <article class="ad card {{ 'review' if a.needs_review and not a.manual_label }}">
+    {% if a.image_url %}<img class="thumb" src="{{ a.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">{% endif %}
+    <div class="ad-body">
+      <div class="ad-title"><a href="{{ a.landing_url }}" target="_blank" rel="noopener nofollow">{{ a.title }}</a></div>
+      {% if a.description %}<div class="small">{{ a.description }}</div>{% endif %}
+      <div class="muted small">{{ a.advertiser }} · {{ a.domain }} · {{ a.network }} · seen {{ a.times_seen }}×</div>
+    </div>
+    <div class="ad-cat">
+      <select class="label-select" data-id="{{ a.id }}" style="--c:{{ colors.get(a.category, '#999') }}">
+        {% for c in categories %}<option {{ 'selected' if a.category == c }}>{{ c }}</option>{% endfor %}
+      </select>
+      <div class="small muted conf">
+        {% if a.manual_label %}✔ human label{% else %}{{ '%.0f'|format(a.confidence * 100) }}% · {{ a.method }}{% if a.needs_review %} · <b class="warn">review</b>{% endif %}{% endif %}
+      </div>
+    </div>
+  </article>
+{% else %}
+  <p class="muted card">No ads match these filters.</p>
+{% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}<script>initLabelling();</script>{% endblock %}
