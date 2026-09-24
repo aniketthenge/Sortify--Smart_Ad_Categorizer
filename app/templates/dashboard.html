@@ -1,77 +1,69 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}Overview{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Ad landscape</h1>
-    <p class="muted">Every sponsored creative found on Lokmat Times, categorised automatically.</p>
+    <h1>Ad Overview</h1>
+    <p>Who is advertising on Lokmat Times, and in which categories.</p>
   </div>
   <div class="actions">
-    <button id="scrapeBtn" class="btn primary">Scrape live ads now</button>
-    <a class="btn" href="{{ url_for('export_csv') }}">Export CSV</a>
+    <a class="btn primary" href="{{ url_for('live_page') }}"><span class="ico">👁️</span>View live site</a>
+    <a class="btn" href="{{ url_for('export_csv') }}"><span class="ico">⬇️</span>Download report</a>
   </div>
 </div>
 
-<section id="scrapePanel" class="card hidden">
-  <div class="row between"><h3>Live scrape</h3><span id="scrapeStatus" class="pill">idle</span></div>
-  <p class="muted small">Opens ~10 Lokmat Times sections in headless Chromium, scrolls to load the ad widgets, extracts sponsored cards. Takes 2–4 minutes.</p>
-  <pre id="scrapeLog" class="log"></pre>
+<section class="kpis overview-kpis">
+  <div class="card kpi"><div class="ico">📣</div><div><span>Ads</span><b>{{ s.total_ads }}</b></div></div>
+  <div class="card kpi"><div class="ico">🏢</div><div><span>Advertisers</span><b>{{ s.advertisers }}</b></div></div>
+  <div class="card kpi"><div class="ico">🗓️</div><div><span>Last updated</span><b>{{ s.last_updated or '—' }}</b></div></div>
 </section>
 
-<section class="kpis">
-  <div class="kpi"><span>Unique ads</span><b>{{ s.total_ads }}</b></div>
-  <div class="kpi"><span>Impressions seen</span><b>{{ s.impressions }}</b></div>
-  <div class="kpi"><span>Advertiser domains</span><b>{{ s.advertisers }}</b></div>
-  <div class="kpi"><span>Categories in use</span><b>{{ s.by_category|length }}</b></div>
-  <div class="kpi"><span>Avg. confidence</span><b>{{ '%.0f'|format((s.avg_confidence or 0) * 100) }}%</b></div>
-  <a class="kpi link" href="{{ url_for('ads', review=1) }}"><span>Needs review</span><b>{{ s.needs_review }}</b></a>
-</section>
-
-<div class="grid2">
-  <section class="card">
-    <h3>Ads by category</h3>
-    {% set maxn = (s.by_category|map(attribute='n')|max) if s.by_category else 1 %}
-    <div class="bars">
-      {% for c in s.by_category %}
-      <a class="bar-row" href="{{ url_for('ads', category=c.category) }}">
-        <span class="bar-label"><i class="dot" style="background:{{ colors.get(c.category, '#999') }}"></i>{{ c.category }}</span>
-        <span class="bar-track"><span class="bar" style="width:{{ (c.n / maxn * 100)|round(1) }}%; background:{{ colors.get(c.category, '#999') }}"></span></span>
-        <span class="bar-val">{{ c.n }}</span>
-      </a>
-      {% else %}<p class="muted">No ads yet — click “Scrape live ads now”.</p>{% endfor %}
-    </div>
-  </section>
-
-  <section class="card">
-    <h3>Top advertisers</h3>
-    <table class="table compact">
-      <thead><tr><th>Advertiser</th><th>Category</th><th class="num">Creatives</th><th class="num">Seen</th></tr></thead>
-      <tbody>
-      {% for a in s.top_advertisers %}
-        <tr><td><a href="{{ url_for('ads', q=a.domain) }}">{{ a.advertiser or a.domain }}</a><div class="muted small">{{ a.domain }}</div></td>
-            <td><span class="tag" style="--c:{{ colors.get(a.category, '#999') }}">{{ a.category }}</span></td>
-            <td class="num">{{ a.creatives }}</td><td class="num">{{ a.impressions }}</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    <h3 class="mt">Ad networks</h3>
-    <p>{% for n in s.by_network %}<span class="pill">{{ n.network }}: {{ n.n }}</span> {% endfor %}</p>
-  </section>
-</div>
-
-<section class="card">
-  <h3>Recent scrape runs</h3>
-  <table class="table compact">
-    <thead><tr><th>#</th><th>Started</th><th>Finished</th><th>Status</th><th class="num">Ads found</th><th class="num">New</th></tr></thead>
-    <tbody>
-    {% for r in s.runs %}
-      <tr><td>{{ r.id }}</td><td>{{ r.started_at }}</td><td>{{ r.finished_at or '—' }}</td>
-          <td><span class="pill {{ r.status }}">{{ r.status }}</span></td><td class="num">{{ r.ads_found }}</td><td class="num">{{ r.new_ads }}</td></tr>
+<section class="section">
+  <div class="section-head"><h2>Categories</h2><a href="{{ url_for('ads') }}">Browse all ads →</a></div>
+  {% set total = s.total_ads or 1 %}
+  {% set maxn = (s.by_category|map(attribute='n')|max) if s.by_category else 1 %}
+  <div class="cat-grid">
+    {% for c in s.by_category %}
+    <a class="cat-tile" href="{{ url_for('ads', category=c.category) }}" style="--c:{{ colors.get(c.category) }}">
+      <div class="cat-top">
+        <div class="cat-ico">{{ icons.get(c.category, '•') }}</div>
+        <div class="cat-name">{{ c.category }}</div>
+        <div class="cat-count">{{ c.n }}</div>
+      </div>
+      <div class="cat-bar"><i style="width:{{ (c.n / maxn * 100)|round(1) }}%"></i></div>
+      <div class="cat-share">{{ (c.n / total * 100)|round(0)|int }}% of all ads</div>
+    </a>
     {% else %}
-      <tr><td colspan="6" class="muted">No live scrapes yet. The data shown was collected on 23 Sep 2026 and ships with the project.</td></tr>
+    <div class="card empty-state"><div class="big">📭</div><h2>No ads yet</h2><p class="muted">Please check back soon.</p></div>
     {% endfor %}
-    </tbody>
-  </table>
+  </div>
 </section>
+
+{% if latest %}
+<section class="section">
+  <div class="section-head"><h2>Latest ads</h2><a href="{{ url_for('ads') }}">See all →</a></div>
+  <div class="ad-grid latest">
+    {% for a in latest %}{% include "_ad_card.html" %}{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if s.top_advertisers %}
+<section class="section">
+  <div class="section-head"><h2>Top brands</h2></div>
+  <div class="card adv-list">
+    {% for a in s.top_advertisers %}
+      {% set name = (a|public_ad).advertiser %}
+      <a class="adv" href="{{ url_for('ads', q=name) }}">
+        <span class="avatar" style="--c:{{ colors.get(a.category) }}">{{ name|initials }}</span>
+        <span class="adv-main">
+          <span class="adv-name">{{ name }}</span>
+          <span class="chip" style="--c:{{ colors.get(a.category) }}"><span class="e">{{ icons.get(a.category) }}</span><span class="t">{{ a.category }}</span></span>
+        </span>
+        <span class="adv-count">{{ a.creatives|plural('ad') }}</span>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 {% endblock %}
-{% block scripts %}<script>initScrape();</script>{% endblock %}

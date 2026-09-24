@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Live Site{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Live Site</h1>
+    <p>The Lokmat Times page as it looks right now, with every ad labelled by category.</p>
+  </div>
+  <div class="actions">
+    <button id="liveRefresh" class="btn" type="button" {{ 'hidden' if not snap or not fresh }}><span class="ico">🔄</span>Check again</button>
+  </div>
+</div>
+
+<nav class="section-tabs" aria-label="Page">
+  {% for name, path in live_sections.items() %}
+  <a class="{{ 'on' if path == section }}" href="{{ url_for('live_page', section=path) }}">{{ name }}</a>
+  {% endfor %}
+</nav>
+
+<div id="liveWait" class="notice {{ 'hidden' if snap and fresh }}"><span class="spinner"></span>
+  <span>{% if snap %}Getting the latest version of this page…{% else %}Opening Lokmat Times and finding the ads. This takes about half a minute.{% endif %}</span></div>
+<div id="liveFail" class="notice error hidden"><span>We couldn’t load the live page right now. Please try again in a few minutes.</span></div>
+
+{% if snap %}
+<div class="live-wrap">
+  <section class="card live-list">
+    <div class="head">
+      <h2>{{ snap.ads|length|plural('ad') }} on this page</h2>
+      <p class="muted small">Updated {{ snap.taken_at }}</p>
+      <p class="hint small">👆 Click an ad to find it on the page</p>
+    </div>
+    <div class="live-items">
+    {% for a in snap.ads %}
+      <button class="live-item" type="button" data-spots='{{ a.spots|tojson }}' data-color="{{ colors.get(a.category, a.color) }}">
+        <span class="cat-ico" style="--c:{{ colors.get(a.category, a.color) }}">{{ icons.get(a.category, '•') }}</span>
+        <span class="txt"><span class="c">{{ a.category }}</span><span class="t">{{ a.title }}</span></span>
+        {% if a.spots|length > 1 %}<span class="count" title="Appears {{ a.spots|length }} times">×{{ a.spots|length }}</span>{% endif %}
+      </button>
+    {% else %}
+      <p class="muted small" style="padding:8px">No ads were showing on this page just now. Try another page.</p>
+    {% endfor %}
+    </div>
+  </section>
+  <section class="card live-shot">
+    <div id="shot" class="shot" style="--w:{{ snap.width }}">
+      <img src="{{ url_for('live_image', key=snap.key) }}?v={{ snap.version }}" alt="Lokmat Times page with ads labelled by category" width="{{ snap.width }}" height="{{ snap.height }}">
+      <div id="hl" class="hl hidden"></div>
+    </div>
+  </section>
+</div>
+{% elif not snap %}
+<div class="card empty-state" id="livePlaceholder">
+  <div class="big">🗞️</div>
+  <h2>Preparing the page</h2>
+  <p class="muted">It will appear here automatically.</p>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script>initLiveSnapshot({{ section|tojson }}, {{ 'true' if snap and fresh else 'false' }});</script>{% endblock %}

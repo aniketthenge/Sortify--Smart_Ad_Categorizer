@@ -1,49 +1,52 @@
 {% extends "base.html" %}
-{% block title %}Ads{% endblock %}
+{% block title %}Ad Library{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Ads <span class="muted">({{ ads|length }})</span></h1>
-    <p class="muted">Change a category from the drop-down to correct the model, then retrain it on the Model page.</p>
+    <h1>Ad Library</h1>
+    <p>Every ad on Lokmat Times, sorted into categories.</p>
   </div>
 </div>
 
-<form class="filters card" method="get">
-  <input type="search" name="q" placeholder="Search title, advertiser, domain…" value="{{ f.q }}">
-  <select name="category">
-    <option value="">All categories</option>
-    {% for c in categories %}<option {{ 'selected' if f.category == c }}>{{ c }}</option>{% endfor %}
-  </select>
-  <select name="network">
-    <option value="">All networks</option>
-    {% for n in ['Taboola', 'Google Ads'] %}<option {{ 'selected' if f.network == n }}>{{ n }}</option>{% endfor %}
-  </select>
-  <label class="check"><input type="checkbox" name="review" value="1" {{ 'checked' if review }}> Needs review only</label>
-  <button class="btn primary">Filter</button>
-  <a class="btn" href="{{ url_for('ads') }}">Reset</a>
+<form class="searchbar" method="get" role="search">
+  {% if f.category %}<input type="hidden" name="category" value="{{ f.category }}">{% endif %}
+  <label class="field"><span class="in-field" aria-hidden="true">🔍</span>
+    <input type="search" name="q" placeholder="Search by headline or advertiser" value="{{ f.q }}" maxlength="100" aria-label="Search ads">
+  </label>
+  <button class="btn primary">Search</button>
 </form>
 
-<div class="ad-list">
-{% for a in ads %}
-  <article class="ad card {{ 'review' if a.needs_review and not a.manual_label }}">
-    {% if a.image_url %}<img class="thumb" src="{{ a.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">{% endif %}
-    <div class="ad-body">
-      <div class="ad-title"><a href="{{ a.landing_url }}" target="_blank" rel="noopener nofollow">{{ a.title }}</a></div>
-      {% if a.description %}<div class="small">{{ a.description }}</div>{% endif %}
-      <div class="muted small">{{ a.advertiser }} · {{ a.domain }} · {{ a.network }} · seen {{ a.times_seen }}×</div>
-    </div>
-    <div class="ad-cat">
-      <select class="label-select" data-id="{{ a.id }}" style="--c:{{ colors.get(a.category, '#999') }}">
-        {% for c in categories %}<option {{ 'selected' if a.category == c }}>{{ c }}</option>{% endfor %}
-      </select>
-      <div class="small muted conf">
-        {% if a.manual_label %}✔ human label{% else %}{{ '%.0f'|format(a.confidence * 100) }}% · {{ a.method }}{% if a.needs_review %} · <b class="warn">review</b>{% endif %}{% endif %}
-      </div>
-    </div>
-  </article>
-{% else %}
-  <p class="muted card">No ads match these filters.</p>
-{% endfor %}
+<div class="chips-row" aria-label="Categories">
+  <a class="filter-chip {{ 'on' if not f.category }}" href="{{ url_for('ads', q=f.q or None) }}">All <span class="n">{{ all_total }}</span></a>
+  {% for c in categories if counts.get(c) %}
+  <a class="filter-chip {{ 'on' if f.category == c }}" style="--c:{{ colors.get(c) }}" href="{{ url_for('ads', category=c, q=f.q or None) }}">
+    {{ icons.get(c) }} {{ c }} <span class="n">{{ counts.get(c) }}</span></a>
+  {% endfor %}
 </div>
+
+<div class="results-line">
+  <span>{{ total|plural('ad') }}{% if f.category %} in <b>{{ f.category }}</b>{% endif %}{% if f.q %} matching “{{ f.q }}”{% endif %}</span>
+  {% if f.q or f.category %}<a href="{{ url_for('ads') }}">Clear filters</a>{% endif %}
+</div>
+
+{% if ads %}
+<div class="ad-grid">
+  {% for a in ads %}{% include "_ad_card.html" %}{% endfor %}
+</div>
+{% else %}
+<div class="card empty-state">
+  <div class="big">🔎</div>
+  <h2>No ads found</h2>
+  <p class="muted">Try a different word or another category.</p>
+  <a class="btn" href="{{ url_for('ads') }}">Show all ads</a>
+</div>
+{% endif %}
+
+{% if pages > 1 %}
+<nav class="pager" aria-label="Pages">
+  {% if page > 1 %}<a class="btn" href="{{ url_for('ads', q=f.q or None, category=f.category or None, page=page - 1) }}">‹ Previous</a>{% endif %}
+  <span class="muted">Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a class="btn" href="{{ url_for('ads', q=f.q or None, category=f.category or None, page=page + 1) }}">Next ›</a>{% endif %}
+</nav>
+{% endif %}
 {% endblock %}
-{% block scripts %}<script>initLabelling();</script>{% endblock %}

@@ -64,15 +64,15 @@ def init_db(path: Path = DB_PATH):
 def upsert_ads(ads: list[dict], classifier, path: Path = DB_PATH) -> int:
     """Insert new ads (classified on the way in) or bump last_seen/times_seen.
     Human labels are never overwritten. Returns the number of new ads."""
-    new = 0
     with connect(path) as c:
+        fresh = []
         for ad in ads:
-            row = c.execute("SELECT id FROM ads WHERE id = ?", (ad["id"],)).fetchone()
-            if row:
+            if c.execute("SELECT 1 FROM ads WHERE id = ?", (ad["id"],)).fetchone():
                 c.execute("UPDATE ads SET last_seen = ?, times_seen = times_seen + 1 WHERE id = ?",
                           (ad.get("scraped_at"), ad["id"]))
-                continue
-            pred = classifier.predict(ad["title"], ad.get("description", ""), ad.get("advertiser", ""), ad.get("domain", ""))
+            elif ad["id"] not in {a["id"] for a in fresh}:
+                fresh.append(ad)
+        for ad, pred in zip(fresh, classifier.predict_many(fresh)):
             c.execute(
                 """INSERT INTO ads (id, title, description, advertiser, landing_url, domain, image_url, network,
                    source_page, first_seen, last_seen, category, confidence, method, needs_review)
@@ -81,26 +81,36 @@ def upsert_ads(ads: list[dict], classifier, path: Path = DB_PATH) -> int:
                  ad.get("domain", ""), ad.get("image_url", ""), ad.get("network", ""), ad.get("source_page", ""),
                  ad.get("scraped_at"), ad.get("scraped_at"), pred["category"], pred["confidence"], pred["method"],
                  int(pred["needs_review"])))
-            new += 1
-    return new
+    return len(fresh)
 
 
 def reclassify_all(classifier, path: Path = DB_PATH) -> int:
     """Re-run the (retrained) model over every ad that has no human label."""
     with connect(path) as c:
-        rows = c.execute("SELECT id, title, description, advertiser, domain FROM ads WHERE manual_label = 0").fetchall()
-        for r in rows:
-            p = classifier.predict(r["title"], r["description"], r["advertiser"], r["domain"])
+        rows = [dict(r) for r in c.execute(
+            "SELECT id, title, description, advertiser, domain FROM ads WHERE manual_label = 0")]
+        for r, p in zip(rows, classifier.predict_many(rows)):
             c.execute("UPDATE ads SET category=?, confidence=?, method=?, needs_review=? WHERE id=?",
                       (p["category"], p["confidence"], p["method"], int(p["needs_review"]), r["id"]))
     return len(rows)
 
 
-def set_label(ad_id: str, category: str, path: Path = DB_PATH) -> bool:
+def set_label(ad_id: str, category: str, path: Path = DB_PATH) -> dict | None:
+    """Store a staff correction. Returns the ad (advertiser/domain) or None if not found."""
     with connect(path) as c:
         cur = c.execute("UPDATE ads SET category=?, confidence=1.0, method='manual', needs_review=0, manual_label=1 "
                         "WHERE id=?", (category, ad_id))
-        return cur.rowcount > 0
+        if not cur.rowcount:
+            return None
+        return dict(c.execute("SELECT advertiser, domain FROM ads WHERE id=?", (ad_id,)).fetchone())
+
+
+def categories_for(ids: list[str], path: Path = DB_PATH) -> dict[str, str]:
+    if not ids:
+        return {}
+    with connect(path) as c:
+        q = f"SELECT id, category FROM ads WHERE id IN ({','.join('?' * len(ids))})"
+        return {r["id"]: r["category"] for r in c.execute(q, ids)}
 
 
 def feedback_rows(path: Path = DB_PATH) -> list[dict]:
@@ -137,16 +147,24 @@ def stats(path: Path = DB_PATH) -> dict:
             "needs_review": one("SELECT COUNT(*) FROM ads WHERE needs_review=1 AND manual_label=0"),
             "manual": one("SELECT COUNT(*) FROM ads WHERE manual_label=1"),
             "avg_confidence": one("SELECT ROUND(AVG(confidence),3) FROM ads") or 0,
+            "last_updated": _fmt_date(one("SELECT MAX(last_seen) FROM ads")),
             "by_category": [dict(r) for r in c.execute(
                 "SELECT category, COUNT(*) AS n, SUM(times_seen) AS impressions, ROUND(AVG(confidence),2) AS conf "
                 "FROM ads GROUP BY category ORDER BY n DESC")],
             "by_network": [dict(r) for r in c.execute("SELECT network, COUNT(*) AS n FROM ads GROUP BY network ORDER BY n DESC")],
             "top_advertisers": [dict(r) for r in c.execute(
                 "SELECT advertiser, domain, category, COUNT(*) AS creatives, SUM(times_seen) AS impressions "
-                "FROM ads GROUP BY LOWER(advertiser), domain ORDER BY creatives DESC, impressions DESC LIMIT 10")],
+                "FROM ads GROUP BY LOWER(advertiser), domain ORDER BY creatives DESC, impressions DESC LIMIT 80")],
             "runs": [dict(r) for r in c.execute("SELECT id, started_at, finished_at, status, ads_found, new_ads "
                                                  "FROM scrape_runs ORDER BY id DESC LIMIT 5")],
         }
+
+
+def _fmt_date(iso: str | None) -> str:
+    try:
+        return datetime.fromisoformat(iso).strftime("%d %b %Y") if iso else ""
+    except ValueError:
+        return ""
 
 
 def start_run(path: Path = DB_PATH) -> int:
@@ -171,3 +189,13 @@ def load_sample_if_empty(classifier, path: Path = DB_PATH) -> int:
         return 0
     ads = json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
     return upsert_ads(ads, classifier, path)
+
+
+def last_successful_run(path: Path = DB_PATH) -> datetime | None:
+    """When ads were last refreshed successfully (None if never)."""
+    with connect(path) as c:
+        row = c.execute("SELECT MAX(finished_at) FROM scrape_runs WHERE status='success'").fetchone()
+    try:
+        return datetime.fromisoformat(row[0]) if row and row[0] else None
+    except ValueError:
+        return None

@@ -34,7 +34,7 @@ DEFAULT_SECTIONS = [
     "/entertainment/",
     "/lifestyle/",
     "/technology/",
-    "/mumbai/",
+    "/chhatrapati-sambhajinagar/",
     "/pune/",
     "/international/",
 ]
@@ -107,6 +107,21 @@ def _resolve_google_click(url: str) -> str:
     return url
 
 
+TRACKING_PARAM = re.compile(r"^(utm_|tbl|taboola|gclid|fbclid|dclid|msclkid|click_?id|campaign|site|platform|"
+                            r"thumbnail|title|cpc|pubid|adid|ad_id|creative|placement|network|source|ref$)", re.I)
+
+
+def strip_tracking(url: str) -> str:
+    """Drop ad-network tracking parameters from a landing URL, keep the page itself."""
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+    try:
+        parts = urlsplit(url or "")
+    except ValueError:
+        return url or ""
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if not TRACKING_PARAM.match(k)]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
+
+
 JUNK_TITLES = {"click here", "learn more", "read more", "ad", "ads", "sponsored", "advertisement", "adchoices"}
 
 
@@ -114,6 +129,11 @@ def is_junk(title: str, landing_url: str) -> bool:
     """Creatives with no usable text (e.g. 'Click Here', or title == bare domain)."""
     t = _clean(title).lower()
     return (not t) or t in JUNK_TITLES or t == _domain(landing_url) or len(t) < 4
+
+
+def clean_advertiser(name: str) -> str:
+    """'Science Supply Companies | Search Ads' -> 'Science Supply Companies'."""
+    return re.sub(r"\s*\|\s*(search\s*ads?|sponsored).*$", "", _clean(name), flags=re.I)
 
 
 def ad_id(title: str, advertiser: str, landing_url: str) -> str:
@@ -125,7 +145,7 @@ def ad_id(title: str, advertiser: str, landing_url: str) -> str:
 def _parse_taboola(card: dict, page_url: str, now: str) -> dict | None:
     if not card.get("sponsored"):
         return None
-    landing = card.get("landing_url", "")
+    landing = strip_tracking(card.get("landing_url", ""))
     if _domain(landing).endswith("lokmattimes.com"):
         return None
     title = _clean(card.get("title"))
@@ -142,7 +162,7 @@ def _parse_taboola(card: dict, page_url: str, now: str) -> dict | None:
                 break
     if not desc and len(raw_lines) > 1:
         desc = raw_lines[1] if "sponsored" not in raw_lines[1].lower() else ""
-    advertiser = re.sub(r"\s*\|\s*Sponsored.*$", "", advertiser, flags=re.I)
+    advertiser = clean_advertiser(advertiser)
     if is_junk(title, landing):
         return None
     return {
@@ -169,7 +189,7 @@ def _parse_google(data: dict, page_url: str, now: str) -> dict | None:
     alts = data.get("alts", [])
     if not links and not text_lines:
         return None
-    landing = links[0] if links else ""
+    landing = strip_tracking(links[0]) if links else ""
     title = _clean(text_lines[0] if text_lines else (alts[0] if alts else ""))
     if is_junk(title, landing):
         return None
@@ -186,6 +206,21 @@ def _parse_google(data: dict, page_url: str, now: str) -> dict | None:
         "source_page": page_url,
         "scraped_at": now,
     }
+
+
+class ChromeNotAvailable(RuntimeError):
+    pass
+
+
+async def launch_browser(p, headless: bool = True, args: list[str] | None = None):
+    """Start Google Chrome (the only browser this app uses). Chrome is signed by Google, so Windows
+    Smart App Control allows it, unlike the unsigned browser Playwright can download."""
+    try:
+        return await p.chromium.launch(channel="chrome", headless=headless, args=args or [])
+    except Exception as exc:
+        raise ChromeNotAvailable(
+            "Google Chrome is needed for the Live Site and ad collection but could not be started. "
+            "Install it from https://www.google.com/chrome/ and try again. Details: " + str(exc).splitlines()[0]) from exc
 
 
 async def _scrape_page(context, url: str, scrolls: int, log: Callable[[str], None]) -> list[dict]:
@@ -235,7 +270,7 @@ async def scrape_async(sections=None, scrolls: int = 20, headless: bool = True,
     urls = [s if s.startswith("http") else BASE_URL + s for s in sections]
     seen: dict[str, dict] = {}
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless)
+        browser = await launch_browser(p, headless)
         context = await browser.new_context(user_agent=USER_AGENT, viewport={"width": 1366, "height": 900})
         for url in urls:
             log(f"Scraping {url} ...")
