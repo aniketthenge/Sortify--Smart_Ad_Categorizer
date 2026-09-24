@@ -1,0 +1,16 @@
+<article class="ad-card">
+  <div class="ad-media" style="--c:{{ colors.get(a.category) }}">
+    <span class="ph" aria-hidden="true">{{ icons.get(a.category, '📣') }}</span>
+    {% if a.has_image %}<img src="{{ url_for('ad_image', ad_id=a.id) }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}
+    <a class="chip solid" href="{{ url_for('ads', category=a.category) }}" style="--c:{{ colors.get(a.category) }}"><span class="e">{{ icons.get(a.category) }}</span><span class="t">{{ a.category }}</span></a>
+  </div>
+  <div class="ad-body">
+    {% if a.landing_url %}<a class="ad-title" href="{{ a.landing_url }}" target="_blank" rel="noopener nofollow">{{ a.title }}</a>
+    {% else %}<div class="ad-title">{{ a.title }}</div>{% endif %}
+    {% if a.description %}<div class="ad-desc">{{ a.description }}</div>{% endif %}
+    <div class="ad-foot">
+      <span class="ad-adv">{{ a.advertiser }}</span>
+      {% if a.landing_url %}<a class="ad-visit" href="{{ a.landing_url }}" target="_blank" rel="noopener nofollow">Visit ↗</a>{% endif %}
+    </div>
+  </div>
+</article>

@@ -1,52 +1,75 @@
 {% extends "base.html" %}
-{% block title %}Model{% endblock %}
+{% block title %}Staff{% endblock %}
 {% block content %}
 {% set ev = meta.evaluation or {} %}
 <div class="page-head">
   <div>
-    <h1>Model</h1>
-    <p class="muted">Trained {{ meta.trained_at }} on {{ meta.n_samples }} labelled ads ({{ meta.n_feedback or 0 }} from your corrections).</p>
+    <h1>Staff</h1>
+    <p>Not visible to customers. Model trained {{ meta.trained_at[:16].replace('T', ' ') if meta.trained_at else '—' }} on {{ meta.n_samples }} examples ({{ meta.n_feedback or 0 }} from corrections).</p>
   </div>
   <div class="actions">
-    <button id="retrainBtn" class="btn primary">Retrain with my corrections ({{ s.manual }})</button>
+    <button id="retrainBtn" class="btn primary">Retrain with corrections ({{ s.manual }})</button>
   </div>
 </div>
-<p id="retrainMsg" class="card hidden"></p>
+<div id="retrainMsg" class="notice hidden"></div>
 
 <section class="kpis">
-  <div class="kpi"><span>Accuracy (hybrid)</span><b>{{ '%.1f'|format((ev.accuracy or 0) * 100) }}%</b></div>
-  <div class="kpi"><span>Macro F1</span><b>{{ '%.2f'|format(ev.macro_f1 or 0) }}</b></div>
-  <div class="kpi"><span>ML only accuracy</span><b>{{ '%.1f'|format((ev.ml_only_accuracy or 0) * 100) }}%</b></div>
-  <div class="kpi"><span>Categories</span><b>{{ categories|length }}</b></div>
+  <div class="card kpi"><div class="ico">🎯</div><div><span>Accuracy on new advertisers</span><b>{{ '%.1f'|format((ev.accuracy or 0) * 100) }}%</b></div></div>
+  <div class="card kpi"><div class="ico">🔁</div><div><span>Accuracy on known advertisers</span><b>{{ '%.1f'|format((ev.known_advertiser_accuracy or 0) * 100) }}%</b></div></div>
+  <div class="card kpi"><div class="ico">🧐</div><div><span>Low-confidence ads to check</span><b>{{ review|length }}</b></div></div>
 </section>
 
-<div class="grid2">
+<div class="grid2 section">
   <section class="card">
-    <h3>Per-category performance</h3>
-    <p class="muted small">{{ ev.method }} — the same advertiser never appears in both train and test folds, so these numbers estimate accuracy on <i>new</i> advertisers.</p>
-    <table class="table compact">
-      <thead><tr><th>Category</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1</th><th class="num">Examples</th></tr></thead>
-      <tbody>
-      {% for c, v in (ev.per_class or {}).items()|sort(attribute='1.f1') %}
-        <tr><td><i class="dot" style="background:{{ colors.get(c) }}"></i>{{ c }}</td>
-            <td class="num">{{ v.precision }}</td><td class="num">{{ v.recall }}</td>
-            <td class="num"><b class="{{ 'warn' if v.f1 < 0.75 }}">{{ v.f1 }}</b></td><td class="num">{{ v.support }}</td></tr>
-      {% endfor %}
-      </tbody>
+    <h2>Ad collection</h2>
+    <p class="muted small" style="margin:4px 0 12px">{% if refresh_hours > 0 %}Runs automatically every {{ refresh_hours|round(1) }} hours (setting: REFRESH_HOURS).{% else %}Automatic collection is off (REFRESH_HOURS=0).{% endif %}</p>
+    <button id="refreshBtn" class="btn">Collect latest ads now</button>
+    <table class="table" style="margin-top:14px">
+      <thead><tr><th>Started</th><th>Status</th><th class="num">Found</th><th class="num">New</th></tr></thead>
+      <tbody>{% for r in s.runs %}<tr><td>{{ r.started_at[:16].replace('T', ' ') }}</td><td>{{ r.status }}</td><td class="num">{{ r.ads_found }}</td><td class="num">{{ r.new_ads }}</td></tr>{% else %}<tr><td colspan="4" class="muted">No runs yet.</td></tr>{% endfor %}</tbody>
     </table>
   </section>
   <section class="card">
-    <h3>How it works</h3>
-    <ol class="why">
-      <li><b>Collect</b> — Playwright opens Lokmat Times section pages in headless Chromium, scrolls to trigger lazy ad widgets, and extracts Taboola sponsored cards and Google ad frames. Editorial recommendations are discarded.</li>
-      <li><b>Represent</b> — headline + description + advertiser + domain words are turned into TF-IDF word n-grams (1–2) and character n-grams (2–5). Character n-grams handle Devanagari and brand names like <code>elitematrimony</code>.</li>
-      <li><b>Predict</b> — a class-balanced Logistic Regression outputs a probability per category.</li>
-      <li><b>Blend rules</b> — a curated keyword lexicon per category contributes 25% of the score when it fires. This steadies the model on short, unseen ads and explains the decision.</li>
-      <li><b>Review loop</b> — predictions under 35% confidence are flagged. Your corrections on the Ads page are stored and included the next time you retrain.</li>
-    </ol>
-    <h3 class="mt">Training data by category</h3>
-    <p>{% for c, n in (meta.class_counts or {}).items() %}<span class="pill">{{ c }}: {{ n }}</span> {% endfor %}</p>
+    <h2>Live site in a window</h2>
+    <p class="muted small" style="margin-top:4px">Opens lokmattimes.com in a browser window <b>on the computer running this app</b>, with ads labelled as you scroll. For demos in the office; customers use the Live Site page.</p>
+    <div class="picker">
+      <select id="liveWinSection" aria-label="Page">{% for name, path in live_sections.items() %}<option value="{{ path }}">{{ name }}</option>{% endfor %}</select>
+      <button id="liveWinBtn" class="btn">Open in a window</button>
+    </div>
   </section>
 </div>
+
+<section class="card section">
+  <h2>Check low-confidence ads</h2>
+  <p class="muted small" style="margin:4px 0 6px">Fix any wrong category, then press Retrain.</p>
+  {% for a in review %}
+    <div class="review-row">
+      <div class="txt">
+        <div style="font-weight:600">{{ a.title }}</div>
+        <div class="muted small">{{ a.advertiser }} · {{ a.domain }} · {{ '%.0f'|format(a.confidence * 100) }}% sure</div>
+      </div>
+      <select class="label-select" data-id="{{ a.id }}" aria-label="Category">
+        {% for c in categories %}<option {{ 'selected' if a.category == c }}>{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+  {% else %}
+    <p class="muted" style="padding:10px 0">Nothing to check.</p>
+  {% endfor %}
+</section>
+
+<section class="card section">
+  <h2>Accuracy by category</h2>
+  <table class="table" style="margin-top:10px">
+    <thead><tr><th>Category</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1</th><th class="num">Examples</th></tr></thead>
+    <tbody>
+    {% for c, v in (ev.per_class or {}).items()|sort(attribute='1.f1') %}
+      <tr><td><i class="dot" style="background:{{ colors.get(c) }}"></i>{{ icons.get(c) }} {{ c }}</td>
+          <td class="num">{{ v.precision }}</td><td class="num">{{ v.recall }}</td>
+          <td class="num"><b class="{{ 'warn' if v.f1 < 0.85 }}">{{ v.f1 }}</b></td><td class="num">{{ v.support }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
 {% endblock %}
-{% block scripts %}<script>initRetrain();</script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='admin.js') }}"></script>
+<script>initRetrain(); initLabelling(); initAdminRefresh(); initLiveWindow();</script>{% endblock %}

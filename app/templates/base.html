@@ -3,24 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
   <title>{% block title %}Ad Categorizer{% endblock %} · Lokmat Times</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c8102e'/%3E%3Ctext x='16' y='21' font-family='Segoe UI,Arial' font-size='13' font-weight='800' fill='white' text-anchor='middle'%3EAC%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="logo">AC</span> Ad Categorizer <small>for lokmattimes.com</small></div>
-  <nav>
-    {% set p = request.path %}
-    <a href="{{ url_for('dashboard') }}" class="{{ 'active' if p == '/' }}">Dashboard</a>
-    <a href="{{ url_for('ads') }}" class="{{ 'active' if p.startswith('/ads') }}">Ads</a>
-    <a href="{{ url_for('classify') }}" class="{{ 'active' if p.startswith('/classify') }}">Classify</a>
-    <a href="{{ url_for('model_page') }}" class="{{ 'active' if p.startswith('/model') }}">Model</a>
-  </nav>
+  <div class="topbar-inner">
+    <a class="brand" href="{{ url_for('dashboard') }}"><span class="mark">AC</span><span>Ad Categorizer<small>Lokmat Times</small></span></a>
+    <nav>
+      {% set p = request.path %}
+      <a href="{{ url_for('dashboard') }}" class="{{ 'active' if p == '/' }}">Overview</a>
+      <a href="{{ url_for('ads') }}" class="{{ 'active' if p.startswith('/ads') }}">Ad Library</a>
+      <a href="{{ url_for('live_page') }}" class="{{ 'active' if p.startswith('/live') }}">Live Site</a>
+      <a href="{{ url_for('classify') }}" class="{{ 'active' if p.startswith('/classify') }}">Categorize an Ad</a>
+    </nav>
+  </div>
 </header>
 <main class="container">
   {% block content %}{% endblock %}
 </main>
-<footer class="foot">Ads collected from public pages of lokmattimes.com via headless browser · Hybrid TF-IDF + Logistic Regression + keyword rules</footer>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>

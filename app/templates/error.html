@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Page not found' if code == 404 else 'Error' }}{% endblock %}
+{% block content %}
+<div class="card empty-state">
+  <div class="big">{{ '🧭' if code == 404 else '⚠️' }}</div>
+  <h2>{{ 'Page not found' if code == 404 else 'Something went wrong' }}</h2>
+  <p class="muted">{{ message }}</p>
+  <a class="btn primary" href="{{ url_for('dashboard') }}">Go to Overview</a>
+</div>
+{% endblock %}
