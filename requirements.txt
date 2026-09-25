@@ -6,3 +6,4 @@ numpy>=1.26
 playwright>=1.45
 fastembed>=0.5
 pytest>=8.0
+easyocr>=1.7

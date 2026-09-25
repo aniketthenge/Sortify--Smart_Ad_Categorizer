@@ -12,14 +12,54 @@
   </div>
 </div>
 
+<!-- Date Range Filter -->
+<section class="card date-filter-bar" id="dateFilterBar">
+  <div class="date-filter-row">
+    <span class="date-filter-label">🗓️ Time period</span>
+    <div class="date-presets">
+      <button type="button" class="date-preset {{ 'on' if not s.date_from and not s.date_to }}" data-range="all">All
+        time</button>
+      <button type="button" class="date-preset" data-range="1">Today</button>
+      <button type="button" class="date-preset" data-range="7">Last 7 days</button>
+      <button type="button" class="date-preset" data-range="30">Last 30 days</button>
+    </div>
+    <div class="date-custom">
+      <label>From <input type="date" id="dateFrom" value="{{ s.date_from }}" min="{{ s.date_range.min }}"
+          max="{{ s.date_range.max }}"></label>
+      <label>To <input type="date" id="dateTo" value="{{ s.date_to }}" min="{{ s.date_range.min }}"
+          max="{{ s.date_range.max }}"></label>
+      <button type="button" class="btn" id="dateApply" style="height:38px; padding:0 14px;">Apply</button>
+    </div>
+    {% if s.date_from or s.date_to %}
+    <a class="btn date-clear" href="{{ url_for('dashboard') }}" title="Clear filter">✕ Clear</a>
+    {% endif %}
+  </div>
+  {% if s.date_from or s.date_to %}
+  <div class="date-active-tag">
+    Showing ads from <b>{{ s.date_from or s.date_range.min }}</b> to <b>{{ s.date_to or s.date_range.max }}</b>
+  </div>
+  {% endif %}
+</section>
+
 <section class="kpis overview-kpis">
-  <div class="card kpi"><div class="ico">📣</div><div><span>Ads</span><b>{{ s.total_ads }}</b></div></div>
-  <div class="card kpi"><div class="ico">🏢</div><div><span>Advertisers</span><b>{{ s.advertisers }}</b></div></div>
-  <div class="card kpi"><div class="ico">🗓️</div><div><span>Last updated</span><b>{{ s.last_updated or '—' }}</b></div></div>
+  <div class="card kpi">
+    <div class="ico">📣</div>
+    <div><span>Ads</span><b>{{ s.total_ads }}</b></div>
+  </div>
+  <div class="card kpi">
+    <div class="ico">🏢</div>
+    <div><span>Advertisers</span><b>{{ s.advertisers }}</b></div>
+  </div>
+  <div class="card kpi">
+    <div class="ico">🗓️</div>
+    <div><span>Last updated</span><b>{{ s.last_updated or '—' }}</b></div>
+  </div>
 </section>
 
 <section class="section">
-  <div class="section-head"><h2>Categories</h2><a href="{{ url_for('ads') }}">Browse all ads →</a></div>
+  <div class="section-head">
+    <h2>Categories</h2><a href="{{ url_for('ads') }}">Browse all ads →</a>
+  </div>
   {% set total = s.total_ads or 1 %}
   {% set maxn = (s.by_category|map(attribute='n')|max) if s.by_category else 1 %}
   <div class="cat-grid">
@@ -34,14 +74,20 @@
       <div class="cat-share">{{ (c.n / total * 100)|round(0)|int }}% of all ads</div>
     </a>
     {% else %}
-    <div class="card empty-state"><div class="big">📭</div><h2>No ads yet</h2><p class="muted">Please check back soon.</p></div>
+    <div class="card empty-state">
+      <div class="big">📭</div>
+      <h2>No ads yet</h2>
+      <p class="muted">Please check back soon.</p>
+    </div>
     {% endfor %}
   </div>
 </section>
 
 {% if latest %}
 <section class="section">
-  <div class="section-head"><h2>Latest ads</h2><a href="{{ url_for('ads') }}">See all →</a></div>
+  <div class="section-head">
+    <h2>Latest ads</h2><a href="{{ url_for('ads') }}">See all →</a>
+  </div>
   <div class="ad-grid latest">
     {% for a in latest %}{% include "_ad_card.html" %}{% endfor %}
   </div>
@@ -50,20 +96,71 @@
 
 {% if s.top_advertisers %}
 <section class="section">
-  <div class="section-head"><h2>Top brands</h2></div>
+  <div class="section-head">
+    <h2>Top brands</h2>
+  </div>
   <div class="card adv-list">
     {% for a in s.top_advertisers %}
-      {% set name = (a|public_ad).advertiser %}
-      <a class="adv" href="{{ url_for('ads', q=name) }}">
-        <span class="avatar" style="--c:{{ colors.get(a.category) }}">{{ name|initials }}</span>
-        <span class="adv-main">
-          <span class="adv-name">{{ name }}</span>
-          <span class="chip" style="--c:{{ colors.get(a.category) }}"><span class="e">{{ icons.get(a.category) }}</span><span class="t">{{ a.category }}</span></span>
-        </span>
-        <span class="adv-count">{{ a.creatives|plural('ad') }}</span>
-      </a>
+    {% set name = (a|public_ad).advertiser %}
+    <a class="adv" href="{{ url_for('ads', q=name) }}">
+      <span class="avatar" style="--c:{{ colors.get(a.category) }}">{{ name|initials }}</span>
+      <span class="adv-main">
+        <span class="adv-name">{{ name }}</span>
+        <span class="chip" style="--c:{{ colors.get(a.category) }}"><span class="e">{{ icons.get(a.category)
+            }}</span><span class="t">{{ a.category }}</span></span>
+      </span>
+      <span class="adv-count">{{ a.creatives|plural('ad') }}</span>
+    </a>
     {% endfor %}
   </div>
 </section>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    const dateFrom = document.getElementById('dateFrom');
+    const dateTo = document.getElementById('dateTo');
+    const applyBtn = document.getElementById('dateApply');
+
+    function goDate(from, to) {
+      const u = new URL(window.location.href);
+      if (from) u.searchParams.set('date_from', from); else u.searchParams.delete('date_from');
+      if (to) u.searchParams.set('date_to', to); else u.searchParams.delete('date_to');
+      window.location.href = u.toString();
+    }
+
+    function fmtDate(d) { return d.toISOString().slice(0, 10); }
+
+    document.querySelectorAll('.date-preset').forEach(btn => {
+      btn.onclick = () => {
+        const r = btn.dataset.range;
+        if (r === 'all') return goDate('', '');
+        const today = new Date();
+        const from = new Date(today);
+        from.setDate(today.getDate() - (parseInt(r) - 1));
+        goDate(fmtDate(from), fmtDate(today));
+      };
+    });
+
+    if (applyBtn) {
+      applyBtn.onclick = () => goDate(dateFrom.value, dateTo.value);
+    }
+
+    // Mark the active preset
+    const cur_from = dateFrom?.value || '';
+    const cur_to = dateTo?.value || '';
+    if (cur_from || cur_to) {
+      const today = fmtDate(new Date());
+      document.querySelectorAll('.date-preset').forEach(btn => {
+        btn.classList.remove('on');
+        const r = parseInt(btn.dataset.range);
+        if (!isNaN(r)) {
+          const d = new Date(); d.setDate(d.getDate() - (r - 1));
+          if (fmtDate(d) === cur_from && today === cur_to) btn.classList.add('on');
+        }
+      });
+    }
+  })();
+</script>
 {% endblock %}
