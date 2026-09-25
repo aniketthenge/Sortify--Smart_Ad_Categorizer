@@ -121,6 +121,7 @@ def feedback_rows(path: Path = DB_PATH) -> list[dict]:
 
 
 def query_ads(category: str = "", q: str = "", review_only: bool = False, network: str = "",
+              date_from: str = "", date_to: str = "",
               path: Path = DB_PATH) -> list[dict]:
     sql, args = "SELECT * FROM ads WHERE 1=1", []
     if category:
@@ -132,31 +133,45 @@ def query_ads(category: str = "", q: str = "", review_only: bool = False, networ
     if q:
         sql += " AND (title LIKE ? OR description LIKE ? OR advertiser LIKE ? OR domain LIKE ?)"
         args += [f"%{q}%"] * 4
+    if date_from:
+        sql += " AND first_seen >= ?"; args.append(date_from)
+    if date_to:
+        sql += " AND first_seen <= ?"; args.append(date_to + "T23:59:59")
     sql += " ORDER BY last_seen DESC, times_seen DESC"
     with connect(path) as c:
         return [dict(r) for r in c.execute(sql, args)]
 
 
-def stats(path: Path = DB_PATH) -> dict:
+def stats(path: Path = DB_PATH, date_from: str = "", date_to: str = "") -> dict:
     with connect(path) as c:
-        one = lambda sql: c.execute(sql).fetchone()[0]
+        # Build a WHERE clause for the date filter
+        date_sql, date_args = "", []
+        if date_from:
+            date_sql += " AND first_seen >= ?"; date_args.append(date_from)
+        if date_to:
+            date_sql += " AND first_seen <= ?"; date_args.append(date_to + "T23:59:59")
+        w = f"WHERE 1=1{date_sql}" if date_sql else ""
+        one = lambda sql: c.execute(sql, date_args).fetchone()[0]
         return {
-            "total_ads": one("SELECT COUNT(*) FROM ads"),
-            "impressions": one("SELECT COALESCE(SUM(times_seen),0) FROM ads"),
-            "advertisers": one("SELECT COUNT(DISTINCT domain) FROM ads"),
-            "needs_review": one("SELECT COUNT(*) FROM ads WHERE needs_review=1 AND manual_label=0"),
-            "manual": one("SELECT COUNT(*) FROM ads WHERE manual_label=1"),
-            "avg_confidence": one("SELECT ROUND(AVG(confidence),3) FROM ads") or 0,
-            "last_updated": _fmt_date(one("SELECT MAX(last_seen) FROM ads")),
+            "total_ads": one(f"SELECT COUNT(*) FROM ads {w}"),
+            "impressions": one(f"SELECT COALESCE(SUM(times_seen),0) FROM ads {w}"),
+            "advertisers": one(f"SELECT COUNT(DISTINCT domain) FROM ads {w}"),
+            "needs_review": one(f"SELECT COUNT(*) FROM ads {w}{' AND' if w else ' WHERE'} needs_review=1 AND manual_label=0"),
+            "manual": one(f"SELECT COUNT(*) FROM ads {w}{' AND' if w else ' WHERE'} manual_label=1"),
+            "avg_confidence": one(f"SELECT ROUND(AVG(confidence),3) FROM ads {w}") or 0,
+            "last_updated": _fmt_date(one(f"SELECT MAX(last_seen) FROM ads {w}")),
+            "date_from": date_from,
+            "date_to": date_to,
             "by_category": [dict(r) for r in c.execute(
-                "SELECT category, COUNT(*) AS n, SUM(times_seen) AS impressions, ROUND(AVG(confidence),2) AS conf "
-                "FROM ads GROUP BY category ORDER BY n DESC")],
-            "by_network": [dict(r) for r in c.execute("SELECT network, COUNT(*) AS n FROM ads GROUP BY network ORDER BY n DESC")],
+                f"SELECT category, COUNT(*) AS n, SUM(times_seen) AS impressions, ROUND(AVG(confidence),2) AS conf "
+                f"FROM ads {w} GROUP BY category ORDER BY n DESC", date_args)],
+            "by_network": [dict(r) for r in c.execute(f"SELECT network, COUNT(*) AS n FROM ads {w} GROUP BY network ORDER BY n DESC", date_args)],
             "top_advertisers": [dict(r) for r in c.execute(
-                "SELECT advertiser, domain, category, COUNT(*) AS creatives, SUM(times_seen) AS impressions "
-                "FROM ads GROUP BY LOWER(advertiser), domain ORDER BY creatives DESC, impressions DESC LIMIT 80")],
+                f"SELECT advertiser, domain, category, COUNT(*) AS creatives, SUM(times_seen) AS impressions "
+                f"FROM ads {w} GROUP BY LOWER(advertiser), domain ORDER BY creatives DESC, impressions DESC LIMIT 80", date_args)],
             "runs": [dict(r) for r in c.execute("SELECT id, started_at, finished_at, status, ads_found, new_ads "
                                                  "FROM scrape_runs ORDER BY id DESC LIMIT 5")],
+            "date_range": _get_date_range(c),
         }
 
 
@@ -165,6 +180,13 @@ def _fmt_date(iso: str | None) -> str:
         return datetime.fromisoformat(iso).strftime("%d %b %Y") if iso else ""
     except ValueError:
         return ""
+
+
+def _get_date_range(c) -> dict:
+    """Return the earliest and latest first_seen dates in the database."""
+    row = c.execute("SELECT MIN(first_seen), MAX(first_seen) FROM ads").fetchone()
+    mn, mx = (row[0] or "")[:10], (row[1] or "")[:10]
+    return {"min": mn, "max": mx}
 
 
 def start_run(path: Path = DB_PATH) -> int:

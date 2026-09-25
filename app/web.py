@@ -116,13 +116,15 @@ def create_app(db_path=None, auto_refresh: bool | None = None) -> Flask:
 
     @app.get("/")
     def dashboard():
-        s = db.stats(db_path)
+        date_from = request.args.get("date_from", "").strip()[:10]
+        date_to = request.args.get("date_to", "").strip()[:10]
+        s = db.stats(db_path, date_from=date_from, date_to=date_to)
         # Brands first: publishers of sponsored stories and search networks are not shown as "top brands".
         s["top_advertisers"] = [a for a in s["top_advertisers"]
                                 if not is_network_listing(a) and a["category"] != "Sponsored Stories"][:8]
         # Latest ads: one per category, real brands first, so the row shows the variety of advertising.
         latest, seen = [], set()
-        rows = [a for a in db.query_ads(path=db_path) if a.get("image_url")]
+        rows = [a for a in db.query_ads(date_from=date_from, date_to=date_to, path=db_path) if a.get("image_url")]
         for a in sorted(rows, key=lambda a: a["category"] == "Sponsored Stories"):
             if a["category"] not in seen:
                 seen.add(a["category"]); latest.append(public_ad(a) | {"has_image": True})
@@ -147,10 +149,46 @@ def create_app(db_path=None, auto_refresh: bool | None = None) -> Flask:
     @app.route("/classify", methods=["GET", "POST"])
     def classify():
         form = {k: request.form.get(k, "").strip()[:500] for k in ("title", "description", "advertiser", "url")}
+        image_data = request.form.get("image_data", "").strip()
+        ocr_text = ""
+        raw_bytes = None
+
+        if "image_file" in request.files and request.files["image_file"].filename:
+            f = request.files["image_file"]
+            raw = f.read(5_000_000)
+            if raw:
+                import base64
+                mime = f.mimetype or "image/jpeg"
+                image_data = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+                raw_bytes = raw
+        elif image_data and "," in image_data:
+            import base64
+            try:
+                raw_bytes = base64.b64decode(image_data.split(",", 1)[1])
+            except Exception:
+                raw_bytes = None
+
+        # If ad image was provided and headline is empty, auto-extract with EasyOCR
+        if raw_bytes and not form["title"]:
+            try:
+                from app.ocr import extract_text_from_bytes
+                ocr_res = extract_text_from_bytes(raw_bytes)
+                if ocr_res.get("headline"):
+                    form["title"] = ocr_res["headline"]
+                if ocr_res.get("description") and not form["description"]:
+                    form["description"] = ocr_res["description"]
+                ocr_text = ocr_res.get("full_text", "")
+            except Exception:
+                pass
+
         result = None
-        if request.method == "POST" and (form["title"] or form["description"]):
-            result = model().predict(form["title"], form["description"], form["advertiser"], _domain(form["url"]))
-        return render_template("classify.html", form=form, result=result)
+        ocr_error = None
+        if request.method == "POST":
+            if form["title"] or form["description"]:
+                result = model().predict(form["title"], form["description"], form["advertiser"], _domain(form["url"]))
+            elif raw_bytes:
+                ocr_error = "Could not detect clear text from this image. Please snap closer to the headline, or switch to 'Type Text'."
+        return render_template("classify.html", form=form, result=result, image_data=image_data, ocr_text=ocr_text, ocr_error=ocr_error)
 
     @app.get("/live")
     def live_page():
@@ -187,6 +225,37 @@ def create_app(db_path=None, auto_refresh: bool | None = None) -> Flask:
                         headers={"Content-Disposition": f"attachment; filename={name}"})
 
     # -------------------------------------------------------- customer API
+    @app.post("/api/ocr")
+    def api_ocr():
+        raw = None
+        if "image" in request.files and request.files["image"].filename:
+            raw = request.files["image"].read(6_000_000)
+        elif request.is_json and request.json.get("image_data"):
+            data = request.json["image_data"]
+            if "," in data:
+                data = data.split(",", 1)[1]
+            import base64
+            try:
+                raw = base64.b64decode(data)
+            except Exception:
+                raw = None
+        elif request.form.get("image_data"):
+            data = request.form.get("image_data")
+            if "," in data:
+                data = data.split(",", 1)[1]
+            import base64
+            try:
+                raw = base64.b64decode(data)
+            except Exception:
+                raw = None
+        if not raw:
+            return jsonify(error="No image provided"), 400
+        try:
+            from app.ocr import extract_text_from_bytes
+            return jsonify(extract_text_from_bytes(raw))
+        except Exception as e:
+            return jsonify(error=str(e)), 500
+
     @app.post("/api/classify")
     def api_classify():
         data = request.get_json(force=True, silent=True) or {}
@@ -204,7 +273,9 @@ def create_app(db_path=None, auto_refresh: bool | None = None) -> Flask:
 
     @app.get("/api/stats")
     def api_stats():
-        s = db.stats(db_path)
+        date_from = request.args.get("date_from", "").strip()[:10]
+        date_to = request.args.get("date_to", "").strip()[:10]
+        s = db.stats(db_path, date_from=date_from, date_to=date_to)
         return jsonify(total_ads=s["total_ads"], advertisers=s["advertisers"], last_updated=s["last_updated"],
                        by_category=[{"category": c["category"], "ads": c["n"]} for c in s["by_category"]])
 

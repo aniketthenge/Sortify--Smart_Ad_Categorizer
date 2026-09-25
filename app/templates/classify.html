@@ -4,30 +4,94 @@
 <div class="page-head">
   <div>
     <h1>Categorize an Ad</h1>
-    <p>Type an ad’s headline in English, Marathi or Hindi and see its category instantly.</p>
+    <p>Upload an ad photo, snap one live, or type the headline to see its category instantly.</p>
   </div>
 </div>
 
 <div class="split">
-  <form class="card form" method="post">
-    <label>Headline<input name="title" required value="{{ form.title }}" placeholder="e.g. 2 & 3 BHK flats in Hinjewadi from ₹65 lakh" autofocus></label>
-    <label>Description <span class="opt">(optional)</span><textarea name="description" rows="3" placeholder="Any extra text from the ad">{{ form.description }}</textarea></label>
-    <label>Advertiser <span class="opt">(optional)</span><input name="advertiser" value="{{ form.advertiser }}" placeholder="e.g. Kolte Patil"></label>
-    <label>Website <span class="opt">(optional)</span><input name="url" value="{{ form.url }}" placeholder="e.g. koltepatil.com"></label>
-    <button class="btn primary">Find category</button>
-    <div class="examples">
-      <p>Or try an example:</p>
-      <div>
-        <button type="button" class="example" data-t="Crack MPSC with India's top faculty, new batch starts Monday">🎓 Coaching class</button>
-        <button type="button" class="example" data-t="नवी मुंबईत लवकर उपलब्ध घरे">🏠 नवी मुंबईत घरे</button>
-        <button type="button" class="example" data-t="Term insurance cover of ₹1 crore at just ₹490 a month">🛡️ Term insurance</button>
-        <button type="button" class="example" data-t="नई SUV पर भारी छूट, आज ही टेस्ट ड्राइव बुक करें">🚗 नई SUV</button>
+  <form class="card form" method="post" enctype="multipart/form-data" id="classifyForm">
+    <!-- Mode Switcher Pill: [📷 Upload / Camera] (Default) vs [✍️ Type Text] -->
+    <div class="mode-toggle" role="tablist">
+      <button type="button" class="mode-pill active" id="pillMedia" role="tab" aria-selected="true">
+        <span>📷 Upload / Camera</span>
+      </button>
+      <button type="button" class="mode-pill" id="pillText" role="tab" aria-selected="false">
+        <span>✍️ Type Text</span>
+      </button>
+    </div>
+
+    <!-- Mode 1: Upload / Camera Mode (Default View) -->
+    <div id="mediaModeView">
+      <div class="ad-media-section">
+        <div class="media-header">
+          <span class="title">📸 Snap or Drop Ad Creative</span>
+          <span class="opt">Supports EN · मराठी · हिंदी</span>
+        </div>
+        <div class="media-actions">
+          <button type="button" class="btn-media" id="btnUploadImage">
+            <span>📁 Upload Ad Image</span>
+          </button>
+          <button type="button" class="btn-media camera-btn" id="btnOpenCamera">
+            <span>📷 Snap Photo</span>
+          </button>
+        </div>
+
+        <input type="file" id="fileAdImage" name="image_file" accept="image/*" style="display:none">
+        <input type="file" id="fileCameraInput" accept="image/*" capture="environment" style="display:none">
+        <input type="hidden" name="image_data" id="imageDataInput" value="{{ image_data or '' }}">
+
+        <div class="dropzone" id="adDropzone" {% if image_data %}style="display:none"{% endif %}>
+          <span class="drop-icon">🖼️</span>
+          <span><b>Drop ad photo here</b>, or browse (.jpg, .png, .webp)</span>
+        </div>
+
+        <div class="media-preview-box" id="mediaPreviewBox" {% if not image_data %}style="display:none"{% endif %}>
+          <img id="mediaPreviewImg" src="{{ image_data or '' }}" alt="Attached Ad">
+          <button type="button" class="btn-remove-media" id="btnRemoveMedia" title="Remove photo">✕</button>
+        </div>
+
+        <div class="ocr-badge working" id="ocrStatus" style="display:none">
+          <span class="spinner-small"></span>
+          <span id="ocrStatusText">Reading ad text with EasyOCR (EN / मराठी / हिंदी)...</span>
+        </div>
+      </div>
+
+      <!-- Hidden inputs for media mode: no extra columns visible to user -->
+      <input type="hidden" name="title" id="titleInput" value="{{ form.title }}">
+      <input type="hidden" name="description" id="descInput" value="{{ form.description }}">
+      <input type="hidden" name="advertiser" id="advInput" value="{{ form.advertiser }}">
+      <input type="hidden" name="url" id="urlInput" value="{{ form.url }}">
+    </div>
+
+    <!-- Mode 2: Manual Text Mode -->
+    <div id="textModeView" style="display:none">
+      <label>Headline<input name="manual_title" id="manualTitleInput" value="{{ form.title }}" placeholder="e.g. 2 & 3 BHK flats in Hinjewadi from ₹65 lakh"></label>
+      <label>Description <span class="opt">(optional)</span><textarea name="manual_description" id="manualDescInput" rows="3" placeholder="Any extra text from the ad">{{ form.description }}</textarea></label>
+      <label>Advertiser <span class="opt">(optional)</span><input name="manual_advertiser" id="manualAdvInput" value="{{ form.advertiser }}" placeholder="e.g. Kolte Patil"></label>
+      <label>Website <span class="opt">(optional)</span><input name="manual_url" id="manualUrlInput" value="{{ form.url }}" placeholder="e.g. koltepatil.com"></label>
+
+      <div class="examples">
+        <p>Or try an example:</p>
+        <div>
+          <button type="button" class="example" data-t="Crack MPSC with India's top faculty, new batch starts Monday">🎓 Coaching class</button>
+          <button type="button" class="example" data-t="नवी मुंबईत लवकर उपलब्ध घरे">🏠 नवी मुंबईत घरे</button>
+          <button type="button" class="example" data-t="Term insurance cover of ₹1 crore at just ₹490 a month">🛡️ Term insurance</button>
+          <button type="button" class="example" data-t="नई SUV पर भारी छूट, आज ही टेस्ट ड्राइव बुक करें">🚗 नई SUV</button>
+        </div>
       </div>
     </div>
+
+    <button class="btn primary" id="submitBtn" style="margin-top:12px;">Find category</button>
   </form>
 
+  <!-- Right Side: Category Result -->
   <section class="card">
     {% if result %}
+      {% if image_data %}
+      <div class="result-ad-preview">
+        <img src="{{ image_data }}" alt="Classified ad photo">
+      </div>
+      {% endif %}
       {% set c = colors.get(result.category) %}
       <div class="result" style="--c:{{ c }}">
         <div class="label">Category</div>
@@ -38,6 +102,9 @@
         {% if top >= 0.45 or top >= 3 * second %}<span class="match strong">✓ Strong match</span>
         {% elif top >= 0.3 %}<span class="match good">Good match</span>
         {% else %}<span class="match possible">Possible match</span>{% endif %}
+        {% if form.title and image_data %}
+        <p class="muted" style="margin-top:10px; font-size:12px; max-width:280px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ form.title }}">Detected: “{{ form.title }}”</p>
+        {% endif %}
         {% set others = result.alternatives[1:] | selectattr('score', 'ge', 0.12) | list %}
         {% if others %}
         <div class="alts">
@@ -45,6 +112,17 @@
           <div class="alt-row">{% for alt in others %}<span class="chip" style="--c:{{ colors.get(alt.category) }}"><span class="e">{{ icons.get(alt.category) }}</span><span class="t">{{ alt.category }}</span></span>{% endfor %}</div>
         </div>
         {% endif %}
+      </div>
+    {% elif ocr_error %}
+      {% if image_data %}
+      <div class="result-ad-preview">
+        <img src="{{ image_data }}" alt="Uploaded ad">
+      </div>
+      {% endif %}
+      <div class="placeholder" style="color:var(--text-2); padding:40px 20px;">
+        <div class="big">🔍</div>
+        <h3 style="margin-top:10px; font-size:16px;">No text detected</h3>
+        <p class="muted" style="margin-top:8px; font-size:13px; line-height:1.4;">{{ ocr_error }}</p>
       </div>
     {% else %}
       <div class="placeholder">
@@ -54,10 +132,339 @@
     {% endif %}
   </section>
 </div>
+
+<!-- Camera Viewfinder Modal -->
+<div class="camera-overlay" id="cameraModal" style="display:none">
+  <div class="camera-card">
+    <div class="camera-header">
+      <h3>📷 Snap Ad Photo</h3>
+      <button type="button" class="camera-close" id="btnCloseCamera">✕</button>
+    </div>
+    <div class="camera-view">
+      <video id="cameraVideo" autoplay playsinline muted></video>
+      <div class="camera-guide"></div>
+    </div>
+    <div class="camera-controls">
+      <button type="button" class="btn-flip" id="btnFlipCamera" style="display:none">🔄 Switch</button>
+      <button type="button" class="btn-shutter" id="btnShutter" title="Take photo"></button>
+      <div style="width:70px"></div>
+    </div>
+  </div>
+</div>
+<canvas id="cameraCanvas" style="display:none"></canvas>
 {% endblock %}
-{% block scripts %}<script>
-document.querySelectorAll('.example').forEach(b => b.onclick = () => {
-  const f = document.querySelector('form.form');
-  f.title.value = b.dataset.t; f.description.value = ''; f.advertiser.value = ''; f.url.value = ''; f.submit();
-});
-</script>{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  // Mode switcher elements
+  const pillMedia = document.getElementById('pillMedia');
+  const pillText = document.getElementById('pillText');
+  const mediaModeView = document.getElementById('mediaModeView');
+  const textModeView = document.getElementById('textModeView');
+  const extractedFieldsWrap = document.getElementById('extractedFieldsWrap');
+
+  // Input elements
+  const titleInput = document.getElementById('titleInput');
+  const descInput = document.getElementById('descInput');
+  const advInput = document.getElementById('advInput');
+  const urlInput = document.getElementById('urlInput');
+
+  const manualTitleInput = document.getElementById('manualTitleInput');
+  const manualDescInput = document.getElementById('manualDescInput');
+  const manualAdvInput = document.getElementById('manualAdvInput');
+  const manualUrlInput = document.getElementById('manualUrlInput');
+
+  // Media & Camera elements
+  const fileUpload = document.getElementById('fileAdImage');
+  const fileCamera = document.getElementById('fileCameraInput');
+  const btnUpload = document.getElementById('btnUploadImage');
+  const btnCamera = document.getElementById('btnOpenCamera');
+  const dropzone = document.getElementById('adDropzone');
+  const previewBox = document.getElementById('mediaPreviewBox');
+  const previewImg = document.getElementById('mediaPreviewImg');
+  const btnRemove = document.getElementById('btnRemoveMedia');
+  const ocrStatus = document.getElementById('ocrStatus');
+  const ocrText = document.getElementById('ocrStatusText');
+  const imageDataInput = document.getElementById('imageDataInput');
+  const classifyForm = document.getElementById('classifyForm');
+
+  // Camera modal elements
+  const cameraModal = document.getElementById('cameraModal');
+  const btnCloseCamera = document.getElementById('btnCloseCamera');
+  const btnShutter = document.getElementById('btnShutter');
+  const btnFlip = document.getElementById('btnFlipCamera');
+  const video = document.getElementById('cameraVideo');
+  const canvas = document.getElementById('cameraCanvas');
+
+  let currentMode = 'media';
+  let mediaStream = null;
+  let useFacingMode = "environment";
+
+  // Tab switching
+  pillMedia.onclick = () => switchMode('media');
+  pillText.onclick = () => switchMode('text');
+
+  function switchMode(mode) {
+    currentMode = mode;
+    if (mode === 'media') {
+      pillMedia.classList.add('active');
+      pillMedia.setAttribute('aria-selected', 'true');
+      pillText.classList.remove('active');
+      pillText.setAttribute('aria-selected', 'false');
+      mediaModeView.style.display = 'block';
+      textModeView.style.display = 'none';
+      if (manualTitleInput.value && !titleInput.value) {
+        titleInput.value = manualTitleInput.value;
+        descInput.value = manualDescInput.value;
+        advInput.value = manualAdvInput.value;
+        urlInput.value = manualUrlInput.value;
+      }
+    } else {
+      pillText.classList.add('active');
+      pillText.setAttribute('aria-selected', 'true');
+      pillMedia.classList.remove('active');
+      pillMedia.setAttribute('aria-selected', 'false');
+      textModeView.style.display = 'block';
+      mediaModeView.style.display = 'none';
+      if (titleInput.value && !manualTitleInput.value) {
+        manualTitleInput.value = titleInput.value;
+        manualDescInput.value = descInput.value;
+        manualAdvInput.value = advInput.value;
+        manualUrlInput.value = urlInput.value;
+      }
+      manualTitleInput.focus();
+    }
+  }
+
+  // Upload actions
+  if (btnUpload && fileUpload) {
+    btnUpload.onclick = () => fileUpload.click();
+    fileUpload.onchange = (e) => {
+      if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+    };
+  }
+
+  // Drag and drop
+  if (dropzone && fileUpload) {
+    dropzone.onclick = () => fileUpload.click();
+    ['dragenter', 'dragover'].forEach(name => {
+      dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+      dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); });
+    });
+    dropzone.addEventListener('drop', (e) => {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleFile(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  // Camera functionality
+  if (btnCamera) {
+    btnCamera.onclick = async () => {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          await startCamera(useFacingMode);
+          cameraModal.style.display = 'flex';
+        } catch (err) {
+          console.warn("Camera fallback to native file input:", err);
+          if (fileCamera) fileCamera.click();
+        }
+      } else if (fileCamera) {
+        fileCamera.click();
+      }
+    };
+  }
+
+  if (fileCamera) {
+    fileCamera.onchange = (e) => {
+      if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+    };
+  }
+
+  async function startCamera(mode) {
+    if (mediaStream) stopCamera();
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    video.srcObject = mediaStream;
+    await video.play();
+  }
+
+  function stopCamera() {
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => track.stop());
+      mediaStream = null;
+    }
+  }
+
+  if (btnCloseCamera) {
+    btnCloseCamera.onclick = () => {
+      stopCamera();
+      cameraModal.style.display = 'none';
+    };
+  }
+
+  if (btnFlip) {
+    btnFlip.onclick = async () => {
+      useFacingMode = (useFacingMode === "environment") ? "user" : "environment";
+      try { await startCamera(useFacingMode); } catch (e) {}
+    };
+  }
+
+  if (btnShutter) {
+    btnShutter.onclick = () => {
+      if (!video || !video.videoWidth) return;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      stopCamera();
+      cameraModal.style.display = 'none';
+      processDataUrl(dataUrl);
+    };
+  }
+
+  let activeOcrPromise = null;
+  const submitBtn = document.getElementById('submitBtn');
+
+  if (btnRemove) {
+    btnRemove.onclick = () => {
+      if (imageDataInput) imageDataInput.value = '';
+      if (previewImg) previewImg.src = '';
+      if (previewBox) previewBox.style.display = 'none';
+      if (dropzone) dropzone.style.display = 'block';
+      if (ocrStatus) ocrStatus.style.display = 'none';
+      if (fileUpload) fileUpload.value = '';
+      if (fileCamera) fileCamera.value = '';
+      if (titleInput) titleInput.value = '';
+      if (descInput) descInput.value = '';
+      activeOcrPromise = null;
+    };
+  }
+
+  function handleFile(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => resizeAndProcess(e.target.result);
+    reader.readAsDataURL(file);
+  }
+
+  // Resize image client-side to max 800px so it uploads instantly (~60-90KB)
+  function resizeAndProcess(dataUrl) {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 800;
+      let w = img.width, h = img.height;
+      if (Math.max(w, h) > MAX) {
+        const scale = MAX / Math.max(w, h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      const resized = c.toDataURL('image/jpeg', 0.82);
+      processDataUrl(resized);
+    };
+    img.src = dataUrl;
+  }
+
+  async function processDataUrl(dataUrl) {
+    if (imageDataInput) imageDataInput.value = dataUrl;
+    if (previewImg) previewImg.src = dataUrl;
+    if (previewBox) previewBox.style.display = 'flex';
+    if (dropzone) dropzone.style.display = 'none';
+
+    // Clear raw file input so form submission doesn't re-upload a heavy multi-megabyte file
+    if (fileUpload) fileUpload.value = '';
+    if (fileCamera) fileCamera.value = '';
+
+    if (ocrStatus && ocrText) {
+      ocrStatus.className = 'ocr-badge working';
+      ocrStatus.style.display = 'flex';
+      ocrText.textContent = 'Reading ad text (EN / मराठी / हिंदी)…';
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    activeOcrPromise = (async () => {
+      try {
+        const resp = await fetch('/api/ocr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_data: dataUrl }),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+        const data = await resp.json();
+
+        if (data && data.headline) {
+          if (titleInput) titleInput.value = data.headline;
+          if (descInput && data.description) descInput.value = data.description;
+          if (ocrStatus && ocrText) {
+            ocrStatus.className = 'ocr-badge success';
+            const snippet = data.headline.length > 35 ? data.headline.slice(0, 35) + '…' : data.headline;
+            ocrText.textContent = '✓ Text detected: "' + snippet + '"';
+          }
+        } else {
+          if (ocrStatus && ocrText) {
+            ocrStatus.className = 'ocr-badge';
+            ocrText.textContent = '📷 Photo attached. Click Find category to classify.';
+          }
+        }
+      } catch (err) {
+        clearTimeout(timeout);
+        if (ocrStatus && ocrText) {
+          ocrStatus.className = 'ocr-badge';
+          ocrText.textContent = '📷 Photo attached. Click Find category to classify.';
+        }
+      }
+    })();
+  }
+
+  // Handle form submit to sync active inputs and await OCR if still running
+  classifyForm.onsubmit = async (e) => {
+    if (currentMode === 'media') {
+      if (imageDataInput && imageDataInput.value && !titleInput.value && activeOcrPromise) {
+        e.preventDefault();
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = '<span class="spinner-small" style="display:inline-block; vertical-align:middle; margin-right:6px;"></span> Reading & Categorizing...';
+        }
+        await Promise.race([
+          activeOcrPromise,
+          new Promise(res => setTimeout(res, 8000))
+        ]);
+        if (submitBtn) submitBtn.disabled = false;
+        classifyForm.submit();
+        return;
+      }
+    } else {
+      titleInput.value = manualTitleInput.value;
+      descInput.value = manualDescInput.value;
+      advInput.value = manualAdvInput.value;
+      urlInput.value = manualUrlInput.value;
+    }
+  };
+
+  // Example chips click
+  document.querySelectorAll('.example').forEach(b => b.onclick = () => {
+    switchMode('text');
+    manualTitleInput.value = b.dataset.t;
+    manualDescInput.value = '';
+    manualAdvInput.value = '';
+    manualUrlInput.value = '';
+    titleInput.value = b.dataset.t;
+    descInput.value = '';
+    advInput.value = '';
+    urlInput.value = '';
+    classifyForm.submit();
+  });
+})();
+</script>
+{% endblock %}
