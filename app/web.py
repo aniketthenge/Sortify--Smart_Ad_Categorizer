@@ -266,6 +266,107 @@ def create_app(db_path=None, auto_refresh: bool | None = None) -> Flask:
                             data.get("domain") or _domain(str(data.get("url", ""))[:500]))
         return jsonify({k: r[k] for k in ("category", "confidence", "alternatives")})
 
+    @app.post("/api/scan-page")
+    def api_scan_page():
+        """Scan a full page/image for multiple ads, classify each one.
+
+        Accepts the same image formats as /api/ocr (file upload, base64 JSON, or form data).
+        Returns a JSON list of detected ads, each with its OCR text, category, confidence,
+        and bounding-box coordinates on the page.
+        """
+        raw = None
+        if "image" in request.files and request.files["image"].filename:
+            raw = request.files["image"].read(12_000_000)  # larger limit for full pages
+        elif request.is_json and request.json.get("image_data"):
+            data = request.json["image_data"]
+            if "," in data:
+                data = data.split(",", 1)[1]
+            import base64
+            try:
+                raw = base64.b64decode(data)
+            except Exception:
+                raw = None
+        elif request.form.get("image_data"):
+            data = request.form.get("image_data")
+            if "," in data:
+                data = data.split(",", 1)[1]
+            import base64
+            try:
+                raw = base64.b64decode(data)
+            except Exception:
+                raw = None
+        if not raw:
+            return jsonify(error="No image provided"), 400
+
+        try:
+            from app.ocr import extract_multiple_ads_from_bytes
+            scan = extract_multiple_ads_from_bytes(raw)
+            if scan.get("error") and not scan["ads"]:
+                return jsonify(error=scan["error"]), 422
+
+            # User-friendly labels for the classification method
+            _METHOD_LABELS = {
+                "lexical": "Text pattern matching",
+                "semantic": "AI meaning analysis",
+                "lexical+rules": "Text patterns + keyword rules",
+                "semantic+rules": "AI analysis + keyword rules",
+                "lexical+advertiser": "Text patterns + known advertiser",
+                "semantic+advertiser": "AI analysis + known advertiser",
+                "lexical+rules+advertiser": "Text patterns + keywords + known advertiser",
+                "semantic+rules+advertiser": "AI analysis + keywords + known advertiser",
+                "empty": "No text detected",
+            }
+
+            # Track summary statistics
+            n_recognized = 0
+            n_categorized = 0
+            n_uncertain = 0
+
+            # Classify each detected ad
+            for ad in scan["ads"]:
+                with _model_lock:
+                    result = model().predict(ad["headline"], ad.get("description", ""))
+                ad["category"] = result["category"]
+                ad["category_confidence"] = result["confidence"]
+                ad["match_strength"] = (
+                    "strong" if result["confidence"] >= 0.45 or (
+                        result["confidence"] >= 0.3 and len(result.get("alternatives", [])) > 1 and
+                        result["confidence"] >= 3 * result["alternatives"][1]["score"]
+                    ) else "good" if result["confidence"] >= 0.3 else "possible"
+                )
+                ad["alternatives"] = result.get("alternatives", [])[:3]
+                ad["matched_keywords"] = result.get("matched_keywords", [])
+                ad["color"] = category_colors().get(result["category"], "#64748b")
+                ad["icon"] = CATEGORY_ICONS.get(result["category"], "🏷️")
+
+                # Additional fields for manager verification
+                raw_method = result.get("method", "lexical")
+                ad["basis"] = _METHOD_LABELS.get(raw_method, "AI + text analysis")
+                ad["flagged"] = bool(result.get("needs_review", False))
+                # OCR quality for this ad block (from the OCR confidence already on the ad dict)
+                ocr_conf = ad.get("confidence", 0)
+                ad["ocr_quality"] = "Good" if ocr_conf >= 0.7 else "Partial" if ocr_conf >= 0.4 else "Poor"
+
+                # Update summary stats
+                if ad["headline"] and len(ad["headline"].strip()) > 2:
+                    n_recognized += 1
+                if ad["match_strength"] in ("strong", "good"):
+                    n_categorized += 1
+                else:
+                    n_uncertain += 1
+
+            return jsonify({
+                "ads": scan["ads"],
+                "total_ads": len(scan["ads"]),
+                "recognized_ads": n_recognized,
+                "categorized_ads": n_categorized,
+                "uncertain_ads": n_uncertain,
+                "page_width": scan["page_width"],
+                "page_height": scan["page_height"],
+            })
+        except Exception as e:
+            return jsonify(error=str(e)), 500
+
     @app.get("/api/ads")
     def api_ads():
         rows = db.query_ads(request.args.get("category", ""), request.args.get("q", ""), path=db_path)

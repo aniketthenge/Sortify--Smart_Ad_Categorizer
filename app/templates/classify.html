@@ -4,16 +4,19 @@
 <div class="page-head">
   <div>
     <h1>Categorize an Ad</h1>
-    <p>Upload an ad photo, snap one live, or type the headline to see its category instantly.</p>
+    <p>Upload an ad photo, snap one live, scan a full page of ads, or type the headline to see its category instantly.</p>
   </div>
 </div>
 
 <div class="split">
   <form class="card form" method="post" enctype="multipart/form-data" id="classifyForm">
-    <!-- Mode Switcher Pill: [📷 Upload / Camera] (Default) vs [✍️ Type Text] -->
+    <!-- Mode Switcher Pill: three modes -->
     <div class="mode-toggle" role="tablist">
       <button type="button" class="mode-pill active" id="pillMedia" role="tab" aria-selected="true">
         <span>📷 Upload / Camera</span>
+      </button>
+      <button type="button" class="mode-pill" id="pillPage" role="tab" aria-selected="false">
+        <span>📰 Scan Full Page</span>
       </button>
       <button type="button" class="mode-pill" id="pillText" role="tab" aria-selected="false">
         <span>✍️ Type Text</span>
@@ -63,7 +66,43 @@
       <input type="hidden" name="url" id="urlInput" value="{{ form.url }}">
     </div>
 
-    <!-- Mode 2: Manual Text Mode -->
+    <!-- Mode 2: Scan Full Page Mode -->
+    <div id="pageModeView" style="display:none">
+      <div class="ad-media-section">
+        <div class="media-header">
+          <span class="title">📰 Upload a page with multiple ads</span>
+          <span class="opt">We'll find & categorize every ad on the page</span>
+        </div>
+        <div class="media-actions">
+          <button type="button" class="btn-media" id="btnUploadPage">
+            <span>📁 Upload Page Image</span>
+          </button>
+          <button type="button" class="btn-media camera-btn" id="btnSnapPage">
+            <span>📷 Snap Page</span>
+          </button>
+        </div>
+
+        <input type="file" id="filePageImage" accept="image/*" style="display:none">
+        <input type="file" id="filePageCamera" accept="image/*" capture="environment" style="display:none">
+
+        <div class="dropzone" id="pageDropzone">
+          <span class="drop-icon">📄</span>
+          <span><b>Drop newspaper / magazine page here</b><br>We'll detect all ads and categorize each one</span>
+        </div>
+
+        <div class="media-preview-box" id="pagePreviewBox" style="display:none">
+          <img id="pagePreviewImg" src="" alt="Page to scan">
+          <button type="button" class="btn-remove-media" id="btnRemovePage" title="Remove page">✕</button>
+        </div>
+
+        <div class="ocr-badge working" id="pageScanStatus" style="display:none">
+          <span class="spinner-small"></span>
+          <span id="pageScanText">Scanning page for ads…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mode 3: Manual Text Mode -->
     <div id="textModeView" style="display:none">
       <label>Headline<input name="manual_title" id="manualTitleInput" value="{{ form.title }}" placeholder="e.g. 2 & 3 BHK flats in Hinjewadi from ₹65 lakh"></label>
       <label>Description <span class="opt">(optional)</span><textarea name="manual_description" id="manualDescInput" rows="3" placeholder="Any extra text from the ad">{{ form.description }}</textarea></label>
@@ -85,7 +124,7 @@
   </form>
 
   <!-- Right Side: Category Result -->
-  <section class="card">
+  <section class="card" id="resultSection">
     {% if result %}
       {% if image_data %}
       <div class="result-ad-preview">
@@ -103,7 +142,7 @@
         {% elif top >= 0.3 %}<span class="match good">Good match</span>
         {% else %}<span class="match possible">Possible match</span>{% endif %}
         {% if form.title and image_data %}
-        <p class="muted" style="margin-top:10px; font-size:12px; max-width:280px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ form.title }}">Detected: “{{ form.title }}”</p>
+        <p class="muted" style="margin-top:10px; font-size:12px; max-width:280px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ form.title }}">Detected: "{{ form.title }}"</p>
         {% endif %}
         {% set others = result.alternatives[1:] | selectattr('score', 'ge', 0.12) | list %}
         {% if others %}
@@ -125,10 +164,12 @@
         <p class="muted" style="margin-top:8px; font-size:13px; line-height:1.4;">{{ ocr_error }}</p>
       </div>
     {% else %}
-      <div class="placeholder">
+      <div class="placeholder" id="defaultPlaceholder">
         <div class="big">🏷️</div>
         <p>The category will appear here.</p>
       </div>
+      <!-- Multi-ad scan results container (hidden by default, filled via JS) -->
+      <div id="multiResults" style="display:none"></div>
     {% endif %}
   </section>
 </div>
@@ -159,8 +200,10 @@
 (function() {
   // Mode switcher elements
   const pillMedia = document.getElementById('pillMedia');
+  const pillPage = document.getElementById('pillPage');
   const pillText = document.getElementById('pillText');
   const mediaModeView = document.getElementById('mediaModeView');
+  const pageModeView = document.getElementById('pageModeView');
   const textModeView = document.getElementById('textModeView');
   const extractedFieldsWrap = document.getElementById('extractedFieldsWrap');
 
@@ -189,6 +232,21 @@
   const imageDataInput = document.getElementById('imageDataInput');
   const classifyForm = document.getElementById('classifyForm');
 
+  // Page scan elements
+  const filePageImage = document.getElementById('filePageImage');
+  const filePageCamera = document.getElementById('filePageCamera');
+  const btnUploadPage = document.getElementById('btnUploadPage');
+  const btnSnapPage = document.getElementById('btnSnapPage');
+  const pageDropzone = document.getElementById('pageDropzone');
+  const pagePreviewBox = document.getElementById('pagePreviewBox');
+  const pagePreviewImg = document.getElementById('pagePreviewImg');
+  const btnRemovePage = document.getElementById('btnRemovePage');
+  const pageScanStatus = document.getElementById('pageScanStatus');
+  const pageScanText = document.getElementById('pageScanText');
+  const multiResults = document.getElementById('multiResults');
+  const defaultPlaceholder = document.getElementById('defaultPlaceholder');
+  const resultSection = document.getElementById('resultSection');
+
   // Camera modal elements
   const cameraModal = document.getElementById('cameraModal');
   const btnCloseCamera = document.getElementById('btnCloseCamera');
@@ -200,33 +258,47 @@
   let currentMode = 'media';
   let mediaStream = null;
   let useFacingMode = "environment";
+  let cameraTarget = 'single'; // 'single' or 'page'
+  let pageImageData = null;
+
+  // All pills and views
+  const allPills = [pillMedia, pillPage, pillText];
+  const allViews = { media: mediaModeView, page: pageModeView, text: textModeView };
 
   // Tab switching
   pillMedia.onclick = () => switchMode('media');
+  pillPage.onclick = () => switchMode('page');
   pillText.onclick = () => switchMode('text');
 
   function switchMode(mode) {
     currentMode = mode;
+    allPills.forEach(p => { p.classList.remove('active'); p.setAttribute('aria-selected', 'false'); });
+    Object.values(allViews).forEach(v => v.style.display = 'none');
+
     if (mode === 'media') {
       pillMedia.classList.add('active');
       pillMedia.setAttribute('aria-selected', 'true');
-      pillText.classList.remove('active');
-      pillText.setAttribute('aria-selected', 'false');
       mediaModeView.style.display = 'block';
-      textModeView.style.display = 'none';
+      submitBtn.textContent = 'Find category';
+      submitBtn.style.display = '';
       if (manualTitleInput.value && !titleInput.value) {
         titleInput.value = manualTitleInput.value;
         descInput.value = manualDescInput.value;
         advInput.value = manualAdvInput.value;
         urlInput.value = manualUrlInput.value;
       }
+    } else if (mode === 'page') {
+      pillPage.classList.add('active');
+      pillPage.setAttribute('aria-selected', 'true');
+      pageModeView.style.display = 'block';
+      submitBtn.textContent = 'Scan & categorize all ads';
+      submitBtn.style.display = '';
     } else {
       pillText.classList.add('active');
       pillText.setAttribute('aria-selected', 'true');
-      pillMedia.classList.remove('active');
-      pillMedia.setAttribute('aria-selected', 'false');
       textModeView.style.display = 'block';
-      mediaModeView.style.display = 'none';
+      submitBtn.textContent = 'Find category';
+      submitBtn.style.display = '';
       if (titleInput.value && !manualTitleInput.value) {
         manualTitleInput.value = titleInput.value;
         manualDescInput.value = descInput.value;
@@ -237,7 +309,7 @@
     }
   }
 
-  // Upload actions
+  // Upload actions (single ad)
   if (btnUpload && fileUpload) {
     btnUpload.onclick = () => fileUpload.click();
     fileUpload.onchange = (e) => {
@@ -245,7 +317,7 @@
     };
   }
 
-  // Drag and drop
+  // Drag and drop (single ad)
   if (dropzone && fileUpload) {
     dropzone.onclick = () => fileUpload.click();
     ['dragenter', 'dragover'].forEach(name => {
@@ -261,9 +333,103 @@
     });
   }
 
+  // Page scan upload actions
+  if (btnUploadPage && filePageImage) {
+    btnUploadPage.onclick = () => filePageImage.click();
+    filePageImage.onchange = (e) => {
+      if (e.target.files && e.target.files[0]) handlePageFile(e.target.files[0]);
+    };
+  }
+
+  // Page scan drag and drop
+  if (pageDropzone && filePageImage) {
+    pageDropzone.onclick = () => filePageImage.click();
+    ['dragenter', 'dragover'].forEach(name => {
+      pageDropzone.addEventListener(name, (e) => { e.preventDefault(); pageDropzone.classList.add('dragover'); });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+      pageDropzone.addEventListener(name, (e) => { e.preventDefault(); pageDropzone.classList.remove('dragover'); });
+    });
+    pageDropzone.addEventListener('drop', (e) => {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handlePageFile(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  // Page scan snap
+  if (btnSnapPage) {
+    btnSnapPage.onclick = async () => {
+      cameraTarget = 'page';
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          await startCamera(useFacingMode);
+          cameraModal.style.display = 'flex';
+        } catch (err) {
+          if (filePageCamera) filePageCamera.click();
+        }
+      } else if (filePageCamera) {
+        filePageCamera.click();
+      }
+    };
+  }
+
+  if (filePageCamera) {
+    filePageCamera.onchange = (e) => {
+      if (e.target.files && e.target.files[0]) handlePageFile(e.target.files[0]);
+    };
+  }
+
+  if (btnRemovePage) {
+    btnRemovePage.onclick = () => {
+      pageImageData = null;
+      if (pagePreviewImg) pagePreviewImg.src = '';
+      if (pagePreviewBox) pagePreviewBox.style.display = 'none';
+      if (pageDropzone) pageDropzone.style.display = 'block';
+      if (pageScanStatus) pageScanStatus.style.display = 'none';
+      if (filePageImage) filePageImage.value = '';
+      if (filePageCamera) filePageCamera.value = '';
+      // Clear multi results
+      if (multiResults) { multiResults.innerHTML = ''; multiResults.style.display = 'none'; }
+      if (defaultPlaceholder) defaultPlaceholder.style.display = '';
+    };
+  }
+
+  function handlePageFile(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => resizePageAndPreview(e.target.result);
+    reader.readAsDataURL(file);
+  }
+
+  function resizePageAndPreview(dataUrl) {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1600;
+      let w = img.width, h = img.height;
+      if (Math.max(w, h) > MAX) {
+        const scale = MAX / Math.max(w, h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      const resized = c.toDataURL('image/jpeg', 0.85);
+      pageImageData = resized;
+      if (pagePreviewImg) pagePreviewImg.src = resized;
+      if (pagePreviewBox) pagePreviewBox.style.display = 'flex';
+      if (pageDropzone) pageDropzone.style.display = 'none';
+      if (filePageImage) filePageImage.value = '';
+      if (filePageCamera) filePageCamera.value = '';
+    };
+    img.src = dataUrl;
+  }
+
   // Camera functionality
   if (btnCamera) {
     btnCamera.onclick = async () => {
+      cameraTarget = 'single';
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         try {
           await startCamera(useFacingMode);
@@ -324,7 +490,11 @@
       const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
       stopCamera();
       cameraModal.style.display = 'none';
-      processDataUrl(dataUrl);
+      if (cameraTarget === 'page') {
+        resizePageAndPreview(dataUrl);
+      } else {
+        processDataUrl(dataUrl);
+      }
     };
   }
 
@@ -427,8 +597,265 @@
     })();
   }
 
+  // --------- Multi-ad page scan ---------
+  async function scanPage() {
+    if (!pageImageData) return;
+
+    if (pageScanStatus && pageScanText) {
+      pageScanStatus.className = 'ocr-badge working';
+      pageScanStatus.style.display = 'flex';
+      pageScanText.textContent = 'Scanning page for ads & categorizing…';
+    }
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner-small" style="display:inline-block; vertical-align:middle; margin-right:6px;"></span> Scanning page…';
+    }
+    // Hide default placeholder, clear old results
+    if (defaultPlaceholder) defaultPlaceholder.style.display = 'none';
+    if (multiResults) { multiResults.innerHTML = ''; multiResults.style.display = 'none'; }
+
+    try {
+      const resp = await fetch('/api/scan-page', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_data: pageImageData }),
+      });
+      const data = await resp.json();
+
+      if (data.error && (!data.ads || data.ads.length === 0)) {
+        if (pageScanStatus && pageScanText) {
+          pageScanStatus.className = 'ocr-badge';
+          pageScanText.textContent = '⚠️ ' + data.error;
+        }
+        if (defaultPlaceholder) {
+          defaultPlaceholder.querySelector('.big').textContent = '🔍';
+          defaultPlaceholder.querySelector('p').textContent = data.error;
+          defaultPlaceholder.style.display = '';
+        }
+        return;
+      }
+
+      if (pageScanStatus && pageScanText) {
+        pageScanStatus.className = 'ocr-badge success';
+        pageScanText.textContent = '✓ Found ' + data.total_ads + ' ad' + (data.total_ads !== 1 ? 's' : '') + ' on this page';
+      }
+
+      renderMultiResults(data);
+    } catch (err) {
+      if (pageScanStatus && pageScanText) {
+        pageScanStatus.className = 'ocr-badge';
+        pageScanText.textContent = '⚠️ Scan failed: ' + (err.message || 'Connection failed');
+      }
+      if (defaultPlaceholder) defaultPlaceholder.style.display = '';
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Scan & categorize all ads';
+      }
+    }
+  }
+
+  function renderMultiResults(data) {
+    if (!multiResults) return;
+    multiResults.innerHTML = '';
+    multiResults.style.display = 'block';
+
+    // Expand to full width: switch parent .split to single-column and hide the form
+    const splitParent = resultSection ? resultSection.closest('.split') : null;
+    if (splitParent) splitParent.classList.add('split--fullwidth');
+    const formCard = document.getElementById('classifyForm');
+    if (formCard) formCard.style.display = 'none';
+
+    // ── Summary Dashboard ──
+    const dashboard = document.createElement('div');
+    dashboard.className = 'verify-dashboard';
+    dashboard.innerHTML = `
+      <div class="verify-header">
+        <div class="verify-title">
+          <span style="font-size:28px">📋</span>
+          <div>
+            <h3>Ad Verification Report</h3>
+            <p class="muted">Review and verify the AI-detected ads below. Edit categories and add notes as needed.</p>
+          </div>
+        </div>
+      </div>
+      <div class="verify-stats">
+        <div class="stat-card stat-total">
+          <div class="stat-number">${data.total_ads}</div>
+          <div class="stat-label">Total Detected</div>
+          <div class="stat-sub">Ad regions found on page</div>
+        </div>
+        <div class="stat-card stat-recognized">
+          <div class="stat-number">${data.recognized_ads ?? data.total_ads}</div>
+          <div class="stat-label">Readable Text</div>
+          <div class="stat-sub">Ads with extractable text</div>
+        </div>
+        <div class="stat-card stat-categorized">
+          <div class="stat-number">${data.categorized_ads ?? 0}</div>
+          <div class="stat-label">Categorized</div>
+          <div class="stat-sub">Confident classifications</div>
+        </div>
+        <div class="stat-card stat-uncertain">
+          <div class="stat-number">${data.uncertain_ads ?? 0}</div>
+          <div class="stat-label">Requires Attention</div>
+          <div class="stat-sub">Low confidence — please verify</div>
+        </div>
+      </div>
+    `;
+    multiResults.appendChild(dashboard);
+
+    // ── Category breakdown chips ──
+    const catCounts = {};
+    data.ads.forEach(ad => {
+      catCounts[ad.category] = (catCounts[ad.category] || 0) + 1;
+    });
+    const summaryBar = document.createElement('div');
+    summaryBar.className = 'multi-summary-bar';
+    summaryBar.innerHTML = '<span style="font-weight:600; color:var(--text-2); margin-right:8px;">Categories found:</span>';
+    Object.entries(catCounts).sort((a, b) => b[1] - a[1]).forEach(([cat, count]) => {
+      const ad = data.ads.find(a => a.category === cat);
+      summaryBar.innerHTML += `<span class="chip solid" style="--c:${ad.color}"><span class="e">${ad.icon}</span><span class="t">${cat}</span><span class="count">\u00d7${count}</span></span>`;
+    });
+    multiResults.appendChild(summaryBar);
+
+    // ── Categories for dropdown ──
+    const allCategories = {{ categories | tojson | safe }};
+
+    // ── Excel-style Verification Table ──
+    const tableWrap = document.createElement('div');
+    tableWrap.className = 'verify-table-wrap';
+
+    const table = document.createElement('table');
+    table.className = 'verify-table';
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th class="col-sr">Sr.</th>
+          <th class="col-headline">Headline (Extracted Text)</th>
+          <th class="col-desc">Description</th>
+          <th class="col-category">Category <span class="edit-hint">(editable)</span></th>
+          <th class="col-confidence">Confidence</th>
+          <th class="col-basis">Basis of Categorization</th>
+          <th class="col-status">Status</th>
+          <th class="col-ocr">OCR Quality</th>
+          <th class="col-notes">Manager Notes <span class="edit-hint">(editable)</span></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tbody = table.querySelector('tbody');
+
+    data.ads.forEach((ad, i) => {
+      const conf = Math.round((ad.category_confidence || 0) * 100);
+      const isUncertain = ad.match_strength === 'possible' || ad.flagged;
+      const statusClass = isUncertain ? 'status-review' : 'status-ok';
+      const statusLabel = isUncertain ? '⚠️ Review' : '✓ OK';
+      const ocrClass = ad.ocr_quality === 'Good' ? 'ocr-good' : ad.ocr_quality === 'Partial' ? 'ocr-partial' : 'ocr-poor';
+
+      // Build basis text: method + matched keywords
+      let basisText = ad.basis || 'AI analysis';
+      if (ad.matched_keywords && ad.matched_keywords.length > 0) {
+        basisText += ' — Keywords: ' + ad.matched_keywords.slice(0, 4).join(', ');
+      }
+      if (ad.alternatives && ad.alternatives.length > 1) {
+        const alt = ad.alternatives[1];
+        if (alt.score >= 0.12) {
+          basisText += ' | Runner-up: ' + alt.category + ' (' + Math.round(alt.score * 100) + '%)';
+        }
+      }
+
+      const tr = document.createElement('tr');
+      tr.className = isUncertain ? 'row-flagged' : '';
+      tr.innerHTML = `
+        <td class="col-sr">${i + 1}</td>
+        <td class="col-headline">
+          <div class="cell-text headline-text">${_esc(ad.headline || '')}</div>
+        </td>
+        <td class="col-desc">
+          <div class="cell-text desc-text">${_esc(ad.description || '—')}</div>
+        </td>
+        <td class="col-category">
+          <select class="verify-select" data-index="${i}">
+            ${allCategories.map(c => `<option value="${c}" ${c === ad.category ? 'selected' : ''}>${c}</option>`).join('')}
+          </select>
+        </td>
+        <td class="col-confidence">
+          <div class="conf-bar-wrap">
+            <div class="conf-bar" style="width:${conf}%; background:${conf >= 45 ? '#16a34a' : conf >= 30 ? '#eab308' : '#ef4444'};"></div>
+          </div>
+          <span class="conf-pct">${conf}%</span>
+        </td>
+        <td class="col-basis">
+          <div class="cell-text basis-text">${_esc(basisText)}</div>
+        </td>
+        <td class="col-status">
+          <span class="status-badge ${statusClass}">${statusLabel}</span>
+        </td>
+        <td class="col-ocr">
+          <span class="ocr-badge-small ${ocrClass}">${ad.ocr_quality || 'N/A'}</span>
+        </td>
+        <td class="col-notes">
+          <input type="text" class="notes-input" data-index="${i}" placeholder="Add notes..." />
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    tableWrap.appendChild(table);
+    multiResults.appendChild(tableWrap);
+
+    // ── Action buttons ──
+    const actions = document.createElement('div');
+    actions.className = 'verify-actions';
+    actions.innerHTML = `
+      <span class="verify-hint">💡 Edit any category dropdown or add notes, then export the verified report.</span>
+      <button class="btn primary" type="button" id="btnExportCSV">📥 Download Verification Report (.csv)</button>
+    `;
+    multiResults.appendChild(actions);
+
+    // ── Export logic ──
+    document.getElementById('btnExportCSV').onclick = () => {
+      const BOM = '\uFEFF';  // UTF-8 BOM so Excel handles Unicode correctly
+      let csv = 'Sr No.,Headline,Description,Category,Confidence %,Basis of Categorization,Status,OCR Quality,Manager Notes\n';
+      tbody.querySelectorAll('tr').forEach((tr, i) => {
+        const ad = data.ads[i];
+        const headline = '"' + (ad.headline || '').replace(/"/g, '""') + '"';
+        const description = '"' + (ad.description || '').replace(/"/g, '""') + '"';
+        const category = '"' + tr.querySelector('select').value + '"';
+        const conf = Math.round((ad.category_confidence || 0) * 100) + '%';
+        // Rebuild basis for export
+        let basis = ad.basis || 'AI analysis';
+        if (ad.matched_keywords && ad.matched_keywords.length > 0) {
+          basis += ' — Keywords: ' + ad.matched_keywords.slice(0, 4).join(', ');
+        }
+        basis = '"' + basis.replace(/"/g, '""') + '"';
+        const isUncertain = ad.match_strength === 'possible' || ad.flagged;
+        const status = isUncertain ? 'Flagged' : 'OK';
+        const ocrQuality = ad.ocr_quality || 'N/A';
+        const notes = '"' + (tr.querySelector('.notes-input').value || '').replace(/"/g, '""') + '"';
+        csv += `${i + 1},${headline},${description},${category},${conf},${basis},${status},${ocrQuality},${notes}\n`;
+      });
+      const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const now = new Date();
+      a.download = `ad_verification_report_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    };
+  }
+
+  // HTML escape helper
+  function _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
   // Handle form submit to sync active inputs and await OCR if still running
   classifyForm.onsubmit = async (e) => {
+    if (currentMode === 'page') {
+      e.preventDefault();
+      await scanPage();
+      return;
+    }
     if (currentMode === 'media') {
       if (imageDataInput && imageDataInput.value && !titleInput.value && activeOcrPromise) {
         e.preventDefault();
