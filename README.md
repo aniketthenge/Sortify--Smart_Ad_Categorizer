@@ -115,3 +115,22 @@ To make sure everything is working properly:
 pytest
 ```
 This runs the automated test suite to confirm all routes, categories, and models are working.
+
+---
+
+## Scan Full Page (rebuilt 29 Sep 2026)
+
+**What it does:** upload a photo/scan of a newspaper page; Sortify finds the **advertisements only** (news is left out), reads each one, categorizes it, and shows a verification table with a picture of every ad, a numbered box on the page, a *calibrated* confidence, and a reading-quality score. **Download Verification Report** gives the table as a spreadsheet (.csv) with extra columns: advertiser, reading quality %, how it was read, position on page.
+
+**How it works (plain words)**
+1. **Find ad areas from the layout** (`app/page_scan.py`, `app/layout_features.py`): a small model looks at colour, pictures, box borders and lettering size, which is how ads differ from columns of news text. Trained on the pages in `test_scans/` (Lokmat + Lokmat Times, Marathi + English), at three quality levels (sharp, low-quality forward, blurry phone photo).
+2. **Separate neighbouring ads** only along printed dividing lines, or white gaps where the two sides also differ in colour.
+3. **Read each ad on its own**, enlarged and sharpened (much more accurate than reading the whole page at once). The headline is the biggest lettering, not simply the first line.
+4. **Double-check for news wording** and drop empty or nested pieces.
+5. **Categorize** with the normal Sortify model. **Confidence is now calibrated** on held-out data: this holds for clean text (the category model); scanned text is often garbled, so scan confidence is low.
+
+**AI mode (optional, best accuracy):** if Anthropic credentials are present, pages are read by Claude vision instead (finds every ad, reads English/Marathi/Hindi print near-perfectly). To turn it on: `setx ANTHROPIC_API_KEY your-key` and restart, or run `ant auth login`. Turn off with `SORTIFY_AI=off`. If AI is unavailable or fails, Sortify silently uses the local engine and says so in the report ("Read on this computer"). Page images are sent to Anthropic only in AI mode. *AI mode is covered by automated tests with a simulated response, but was not run against the real service on this PC (no key here).*
+
+**Measured results of the local engine (final test, 16 pages / 21 ads, page never seen in training): NOT good enough yet.** Found 11 of 21 ads, reported 15 non-ads, right category on only 3 of the 11 found, average reading quality 0.23, average confidence 0.18. Main causes: the free on-computer text reader (EasyOCR) misreads Marathi and stylised ad lettering, so the text fed to the categorizer is wrong; and ads without strong colour or borders are missed. The earlier statement that confidence is "calibrated" holds only for typed/clean text (the category model itself: 95% accurate), not for garbled scan text. **For real use, turn on AI mode (above), which is designed to fix exactly these two problems, but it has not been tested against the real service on this PC.** Until then, treat local-engine scan results as a rough first draft and verify every row.
+
+**Check it yourself:** run `.venv\Scripts\python tools\eval_scan.py --cv -v` (scores the scanner against the hand-marked answer key `test_scans/ground_truth.json`, 16 pages / 21 ads). Run `.venv\Scripts\python -m pytest`.

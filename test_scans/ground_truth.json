@@ -1,0 +1,336 @@
+{
+  "_about": "Hand-marked answer key for the full-page scan. Boxes are [x1, y1, x2, y2] in the image's own pixels. 'ads' must be found; 'optional' may be reported or not (Lokmat's own promotions, greetings); anything else reported is a false positive (news, headers). Pages with no ads must come back empty.",
+  "pages": {
+    "lokmat_times_business_p5.png": {
+      "ads": [
+        {
+          "box": [
+            110,
+            278,
+            332,
+            364
+          ],
+          "category": "Finance & Investment",
+          "label": "UDAAN - Lokmanya savings scheme"
+        },
+        {
+          "box": [
+            540,
+            280,
+            804,
+            602
+          ],
+          "category": "Health & Wellness",
+          "label": "Sharangdhar ayurvedic"
+        },
+        {
+          "box": [
+            540,
+            605,
+            804,
+            932
+          ],
+          "category": "Fashion & Shopping",
+          "label": "Columbus NXG shoes"
+        },
+        {
+          "box": [
+            340,
+            572,
+            537,
+            932
+          ],
+          "category": "Government & Public Notices",
+          "label": "Public notice - Maharashtra Public Trust Act"
+        }
+      ],
+      "optional": [
+        {
+          "box": [
+            110,
+            36,
+            332,
+            274
+          ],
+          "label": "Lokmat Aaple Sanskar promotion"
+        }
+      ]
+    },
+    "pune_p05.jpg": {
+      "ads": [
+        {
+          "box": [
+            2,
+            58,
+            82,
+            282
+          ],
+          "category": "Finance & Investment",
+          "label": "IIFL Finance gold loan"
+        },
+        {
+          "box": [
+            374,
+            556,
+            600,
+            934
+          ],
+          "category": "Health & Wellness",
+          "label": "Dabur Honitus"
+        }
+      ],
+      "optional": [
+        {
+          "box": [
+            2,
+            284,
+            82,
+            368
+          ],
+          "label": "festival box"
+        }
+      ]
+    },
+    "pune_p07.jpg": {
+      "ads": [
+        {
+          "box": [
+            110,
+            628,
+            600,
+            918
+          ],
+          "category": "Automotive",
+          "label": "Mahindra XUV 3XO"
+        }
+      ],
+      "optional": []
+    },
+    "pune_p09.jpg": {
+      "ads": [
+        {
+          "box": [
+            418,
+            12,
+            600,
+            248
+          ],
+          "category": "Food & Beverage",
+          "label": "Amul Masti Dahi"
+        },
+        {
+          "box": [
+            418,
+            250,
+            600,
+            472
+          ],
+          "category": "Finance & Investment",
+          "label": "Lokmanya 10% deposit scheme"
+        },
+        {
+          "box": [
+            298,
+            474,
+            600,
+            932
+          ],
+          "category": "Health & Wellness",
+          "label": "USV heart attack awareness"
+        }
+      ],
+      "optional": []
+    },
+    "pune_p11.jpg": {
+      "ads": [
+        {
+          "box": [
+            298,
+            468,
+            600,
+            934
+          ],
+          "category": "Finance & Investment",
+          "label": "RBI BSBD account",
+          "also_ok": [
+            "Government & Public Notices"
+          ]
+        }
+      ],
+      "optional": []
+    },
+    "pune_p13.jpg": {
+      "ads": [
+        {
+          "box": [
+            394,
+            494,
+            600,
+            558
+          ],
+          "category": "Finance & Investment",
+          "label": "UDAAN - Lokmanya"
+        },
+        {
+          "box": [
+            444,
+            812,
+            600,
+            930
+          ],
+          "category": "Government & Public Notices",
+          "label": "public notice"
+        }
+      ],
+      "optional": [
+        {
+          "box": [
+            298,
+            36,
+            600,
+            472
+          ],
+          "label": "Lokmat Aapla Guru promotion"
+        }
+      ]
+    },
+    "pune_p16.jpg": {
+      "ads": [
+        {
+          "box": [
+            0,
+            0,
+            600,
+            936
+          ],
+          "category": "Automotive",
+          "label": "Bajaj Pulsar full page"
+        }
+      ],
+      "optional": []
+    },
+    "pune_p06.jpg": {
+      "ads": [],
+      "optional": []
+    },
+    "pune_p12.jpg": {
+      "ads": [],
+      "optional": []
+    },
+    "ltnag_p05.jpg": {
+      "ads": [
+        {
+          "box": [
+            2,
+            96,
+            90,
+            264
+          ],
+          "category": "Finance & Investment",
+          "label": "IIFL Finance gold loan (English)"
+        },
+        {
+          "box": [
+            374,
+            556,
+            600,
+            934
+          ],
+          "category": "Health & Wellness",
+          "label": "Dabur Honitus (English)"
+        }
+      ],
+      "optional": []
+    },
+    "ltnag_p07.jpg": {
+      "ads": [
+        {
+          "box": [
+            453,
+            58,
+            600,
+            288
+          ],
+          "category": "Food & Beverage",
+          "label": "Amul Masti Dahi (English)"
+        },
+        {
+          "box": [
+            2,
+            512,
+            302,
+            934
+          ],
+          "category": "Finance & Investment",
+          "label": "RBI BSBD account (English)",
+          "also_ok": [
+            "Government & Public Notices"
+          ]
+        },
+        {
+          "box": [
+            300,
+            512,
+            600,
+            934
+          ],
+          "category": "Health & Wellness",
+          "label": "USV heart attack awareness (English)"
+        }
+      ],
+      "optional": []
+    },
+    "ltnag_p09.jpg": {
+      "ads": [
+        {
+          "box": [
+            392,
+            286,
+            600,
+            354
+          ],
+          "category": "Finance & Investment",
+          "label": "UDAAN - Lokmanya (English)"
+        }
+      ],
+      "optional": [
+        {
+          "box": [
+            400,
+            52,
+            600,
+            282
+          ],
+          "label": "Lokmat Aapla Guru promotion"
+        }
+      ]
+    },
+    "ltnag_p14.jpg": {
+      "ads": [
+        {
+          "box": [
+            0,
+            18,
+            600,
+            936
+          ],
+          "category": "Automotive",
+          "label": "Bajaj Pulsar full page (English)"
+        }
+      ],
+      "optional": []
+    },
+    "ltnag_p06.jpg": {
+      "ads": [],
+      "optional": []
+    },
+    "ltnag_p11.jpg": {
+      "ads": [],
+      "optional": []
+    },
+    "ltnag_p12.jpg": {
+      "ads": [],
+      "optional": []
+    }
+  }
+}
