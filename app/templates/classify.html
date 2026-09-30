@@ -675,7 +675,8 @@
           <span style="font-size:28px">📋</span>
           <div>
             <h3>Ad Verification Report</h3>
-            <p class="muted">Review and verify the AI-detected ads below. Edit categories and add notes as needed.</p>
+            <p class="muted">Review and verify the detected ads below. Edit categories and add notes as needed.</p>
+            ${data.engine_note ? `<p class="engine-note">${data.engine === 'ai' ? '✨' : '🖥️'} ${_esc(data.engine_note)}</p>` : ''}
           </div>
         </div>
       </div>
@@ -718,6 +719,17 @@
     });
     multiResults.appendChild(summaryBar);
 
+    // ── Page preview with a numbered box on every ad found ──
+    if (pageImageData && data.page_width) {
+      const preview = document.createElement('div');
+      preview.className = 'page-preview';
+      preview.innerHTML = `<div class="pp-inner"><img src="${pageImageData}" alt="Scanned page">${data.ads.map((ad, i) => {
+        const b = ad.bbox, W = data.page_width, H = data.page_height;
+        return `<div class="pp-box" data-index="${i}" style="--c:${ad.color};left:${b.x / W * 100}%;top:${b.y / H * 100}%;width:${b.w / W * 100}%;height:${b.h / H * 100}%"><span class="pp-num">${i + 1}</span></div>`;
+      }).join('')}</div><p class="muted small pp-hint">Each coloured box is one ad. Click a box or a row to match them up.</p>`;
+      multiResults.appendChild(preview);
+    }
+
     // ── Categories for dropdown ──
     const allCategories = {{ categories | tojson | safe }};
 
@@ -731,6 +743,7 @@
       <thead>
         <tr>
           <th class="col-sr">Sr.</th>
+          <th class="col-ad">Ad</th>
           <th class="col-headline">Headline (Extracted Text)</th>
           <th class="col-desc">Description</th>
           <th class="col-category">Category <span class="edit-hint">(editable)</span></th>
@@ -751,6 +764,7 @@
       const statusClass = isUncertain ? 'status-review' : 'status-ok';
       const statusLabel = isUncertain ? '⚠️ Review' : '✓ OK';
       const ocrClass = ad.ocr_quality === 'Good' ? 'ocr-good' : ad.ocr_quality === 'Partial' ? 'ocr-partial' : 'ocr-poor';
+      const ocrPct = Math.round((ad.ocr_quality_score || 0) * 100);
 
       // Build basis text: method + matched keywords
       let basisText = ad.basis || 'AI analysis';
@@ -766,8 +780,10 @@
 
       const tr = document.createElement('tr');
       tr.className = isUncertain ? 'row-flagged' : '';
+      tr.dataset.index = i;
       tr.innerHTML = `
-        <td class="col-sr">${i + 1}</td>
+        <td class="col-sr"><span class="sr-num" style="--c:${ad.color}">${i + 1}</span></td>
+        <td class="col-ad">${ad.thumb ? `<img class="ad-thumb" src="${ad.thumb}" alt="Ad ${i + 1}">` : ''}</td>
         <td class="col-headline">
           <div class="cell-text headline-text">${_esc(ad.headline || '')}</div>
         </td>
@@ -781,7 +797,7 @@
         </td>
         <td class="col-confidence">
           <div class="conf-bar-wrap">
-            <div class="conf-bar" style="width:${conf}%; background:${conf >= 45 ? '#16a34a' : conf >= 30 ? '#eab308' : '#ef4444'};"></div>
+            <div class="conf-bar" style="width:${conf}%; background:${conf >= 75 ? '#16a34a' : conf >= 50 ? '#eab308' : '#ef4444'};"></div>
           </div>
           <span class="conf-pct">${conf}%</span>
         </td>
@@ -793,6 +809,7 @@
         </td>
         <td class="col-ocr">
           <span class="ocr-badge-small ${ocrClass}">${ad.ocr_quality || 'N/A'}</span>
+          <span class="ocr-pct">${ocrPct}%</span>
         </td>
         <td class="col-notes">
           <input type="text" class="notes-input" data-index="${i}" placeholder="Add notes..." />
@@ -803,6 +820,21 @@
 
     tableWrap.appendChild(table);
     multiResults.appendChild(tableWrap);
+
+    const highlight = (i, scrollTo) => {
+      multiResults.querySelectorAll('.pp-box.on, tr.row-active').forEach(el => el.classList.remove('on', 'row-active'));
+      const box = multiResults.querySelector(`.pp-box[data-index="${i}"]`);
+      const row = tbody.querySelector(`tr[data-index="${i}"]`);
+      if (box) box.classList.add('on');
+      if (row) row.classList.add('row-active');
+      if (scrollTo === 'row' && row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (scrollTo === 'box' && box) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    multiResults.querySelectorAll('.pp-box').forEach(b => b.onclick = () => highlight(b.dataset.index, 'row'));
+    tbody.querySelectorAll('tr').forEach(tr => tr.addEventListener('click', e => {
+      if (e.target.closest('select, input')) return;
+      highlight(tr.dataset.index, 'box');
+    }));
 
     // ── Action buttons ──
     const actions = document.createElement('div');
@@ -816,7 +848,7 @@
     // ── Export logic ──
     document.getElementById('btnExportCSV').onclick = () => {
       const BOM = '\uFEFF';  // UTF-8 BOM so Excel handles Unicode correctly
-      let csv = 'Sr No.,Headline,Description,Category,Confidence %,Basis of Categorization,Status,OCR Quality,Manager Notes\n';
+      let csv = 'Sr No.,Headline,Advertiser,Description,Category,Confidence %,Basis of Categorization,Status,Reading Quality,Reading Quality %,Read By,Position on Page (x y w h),Manager Notes\n';
       tbody.querySelectorAll('tr').forEach((tr, i) => {
         const ad = data.ads[i];
         const headline = '"' + (ad.headline || '').replace(/"/g, '""') + '"';
@@ -832,8 +864,12 @@
         const isUncertain = ad.match_strength === 'possible' || ad.flagged;
         const status = isUncertain ? 'Flagged' : 'OK';
         const ocrQuality = ad.ocr_quality || 'N/A';
+        const ocrPct = Math.round((ad.ocr_quality_score || 0) * 100) + '%';
+        const advertiser = '"' + (ad.advertiser || '').replace(/"/g, '""') + '"';
+        const readBy = '"' + (data.engine_note || '') + '"';
+        const pos = ad.bbox ? `"${ad.bbox.x} ${ad.bbox.y} ${ad.bbox.w} ${ad.bbox.h}"` : '""';
         const notes = '"' + (tr.querySelector('.notes-input').value || '').replace(/"/g, '""') + '"';
-        csv += `${i + 1},${headline},${description},${category},${conf},${basis},${status},${ocrQuality},${notes}\n`;
+        csv += `${i + 1},${headline},${advertiser},${description},${category},${conf},${basis},${status},${ocrQuality},${ocrPct},${readBy},${pos},${notes}\n`;
       });
       const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
       const url = window.URL.createObjectURL(blob);

@@ -302,6 +302,8 @@ class AdClassifier:
     def _cross_validate(X, y, E, keys, folds: int = 5) -> dict:
         """GroupKFold by advertiser: an advertiser is never in both train and test,
         so the score is the accuracy on advertisers the model has never seen."""
+        calib_rows = []   # (top score, runner-up score, correct?) for confidence calibration
+
         def run(splits, use_memory):
             t, p = [], []
             for tr, te in splits:
@@ -311,15 +313,19 @@ class AdClassifier:
                 lex = tmp._proba(tmp.lexical, X[te])
                 sem = tmp._proba(tmp.semantic, E[te]) if E is not None else None
                 for i, j in enumerate(te):
-                    t.append(y[j])
-                    p.append(tmp._combine(X[j], lex[i], sem[i] if sem is not None else None, keys[j])["category"])
+                    r = tmp._combine(X[j], lex[i], sem[i] if sem is not None else None, keys[j])
+                    t.append(y[j]); p.append(r["category"])
+                    alts = r["alternatives"]
+                    calib_rows.append((alts[0]["score"], alts[1]["score"] if len(alts) > 1 else 0.0, r["category"] == y[j]))
             return t, p
 
         y_true, y_pred = run(GroupKFold(n_splits=folds).split(X, y, keys), use_memory=False)
         # New ads from advertisers already seen (the everyday case): random split + advertiser memory.
         k_true, k_pred = run(KFold(n_splits=folds, shuffle=True, random_state=0).split(X), use_memory=True)
         report = classification_report(y_true, y_pred, output_dict=True, zero_division=0)
+        calibration = _fit_calibration(calib_rows)
         return {
+            "calibration": calibration,
             "method": f"{folds}-fold GroupKFold by advertiser",
             "accuracy": round(accuracy_score(y_true, y_pred), 3),
             "known_advertiser_accuracy": round(accuracy_score(k_true, k_pred), 3),
@@ -365,6 +371,11 @@ class AdClassifier:
             out[:, _IDX[c]] = raw[:, j]
         return out
 
+    def certainty(self, top: float, second: float) -> float:
+        """Calibrated probability that the top category is right (see _fit_calibration)."""
+        cal = (self.meta.get("evaluation") or {}).get("calibration")
+        return round(_apply_calibration(cal, top, second), 3) if cal else round(top, 3)
+
     def _combine(self, text: str, lex: np.ndarray, sem: np.ndarray | None, key: str | None = None) -> dict:
         model = W_SEMANTIC * sem + W_LEXICAL * lex if sem is not None else lex
         kw, hits = keyword_scores(text)
@@ -385,6 +396,7 @@ class AdClassifier:
             "needs_review": conf < REVIEW_THRESHOLD,
             "alternatives": [{"category": CATEGORY_NAMES[i], "score": round(float(score[i]), 3)} for i in order[:3]],
             "matched_keywords": hits.get(CATEGORY_NAMES[order[0]], []),
+            "certainty": self.certainty(conf, float(score[order[1]])),
         }
 
     def predict(self, title: str = "", description: str = "", advertiser: str = "", domain: str = "") -> dict:
@@ -407,6 +419,45 @@ class AdClassifier:
         return [self._combine(t, lex[i], sem[i] if sem is not None else None,
                               advertiser_key(a.get("advertiser", ""), a.get("domain", "")))
                 for i, (t, a) in enumerate(zip(texts, ads))]
+
+
+def _calib_features(top, second):
+    eps = 1e-4
+    lt = np.log((top + eps) / (1 - top + eps))
+    return np.array([[lt, lt - np.log((second + eps) / (1 - second + eps)), top - second]])
+
+
+def _fit_calibration(rows):
+    """Learn P(correct | top score, lead over runner-up) from held-out predictions (Platt-style scaling).
+    Returns plain lists so it can live in the model's metadata, plus a reliability table."""
+    if len(rows) < 50:
+        return None
+    from .softmax import SoftmaxRegression
+    X = np.concatenate([_calib_features(t, s) for t, s, _ in rows]); y = np.array([int(c) for *_, c in rows])
+    if y.min() == y.max():
+        return None
+    mu, sd = X.mean(0), X.std(0) + 1e-6
+    clf = SoftmaxRegression(C=1.0).fit((X - mu) / sd, y)
+    cal = {"mu": mu.tolist(), "sd": sd.tolist(), "coef": clf.coef_.tolist(), "intercept": clf.intercept_.tolist(),
+           "classes": [int(c) for c in clf.classes_]}
+    # reliability: for each certainty band, how often the answer was actually right
+    probs = np.array([_apply_calibration(cal, t, s) for t, s, _ in rows])
+    bands = []
+    for lo, hi in ((0.9, 1.01), (0.75, 0.9), (0.5, 0.75), (0.0, 0.5)):
+        m = (probs >= lo) & (probs < hi)
+        if m.any():
+            bands.append({"band": f"{int(lo * 100)}-{min(100, int(hi * 100))}%", "share_of_ads": round(float(m.mean()), 3),
+                          "actually_right": round(float(y[m].mean()), 3), "n": int(m.sum())})
+    cal["reliability"] = bands
+    return cal
+
+
+def _apply_calibration(cal, top, second) -> float:
+    x = (_calib_features(top, second) - np.array(cal["mu"])) / np.array(cal["sd"])
+    z = x @ np.array(cal["coef"]).T + np.array(cal["intercept"])
+    z = z - z.max()
+    p = np.exp(z) / np.exp(z).sum()
+    return float(p[0, cal["classes"].index(1)])
 
 
 def category_colors() -> dict[str, str]:

@@ -299,12 +299,10 @@ def create_app(db_path=None, auto_refresh: bool | None = None) -> Flask:
             return jsonify(error="No image provided"), 400
 
         try:
-            from app.ocr import extract_multiple_ads_from_bytes
-            scan = extract_multiple_ads_from_bytes(raw)
+            scan = _run_page_scan(raw, request.args.get("engine") or (request.get_json(silent=True) or {}).get("engine"))
             if scan.get("error") and not scan["ads"]:
                 return jsonify(error=scan["error"]), 422
 
-            # User-friendly labels for the classification method
             _METHOD_LABELS = {
                 "lexical": "Text pattern matching",
                 "semantic": "AI meaning analysis",
@@ -316,39 +314,42 @@ def create_app(db_path=None, auto_refresh: bool | None = None) -> Flask:
                 "semantic+rules+advertiser": "AI analysis + keywords + known advertiser",
                 "empty": "No text detected",
             }
-
-            # Track summary statistics
-            n_recognized = 0
-            n_categorized = 0
-            n_uncertain = 0
-
-            # Classify each detected ad
+            n_recognized = n_categorized = n_uncertain = 0
+            page_img = None
             for ad in scan["ads"]:
                 with _model_lock:
-                    result = model().predict(ad["headline"], ad.get("description", ""))
-                ad["category"] = result["category"]
-                ad["category_confidence"] = result["confidence"]
-                ad["match_strength"] = (
-                    "strong" if result["confidence"] >= 0.45 or (
-                        result["confidence"] >= 0.3 and len(result.get("alternatives", [])) > 1 and
-                        result["confidence"] >= 3 * result["alternatives"][1]["score"]
-                    ) else "good" if result["confidence"] >= 0.3 else "possible"
-                )
+                    result = model().predict(ad.get("headline", ""), ad.get("description", ""), ad.get("advertiser", ""))
+                certainty = result.get("certainty", result["confidence"])
+                category, basis = result["category"], _METHOD_LABELS.get(result.get("method", ""), "AI + text analysis")
+                ai_cat = ad.get("ai_category")
+                if ai_cat:                        # AI engine: combine its reading of the page with Sortify's model
+                    ai_conf = ad.get("ai_confidence", 0.0)
+                    if ai_cat == category:
+                        certainty = max(certainty, ai_conf, 1 - (1 - certainty) * (1 - ai_conf))
+                        basis = "AI page reading + Sortify model agree"
+                    else:
+                        category, certainty = ai_cat, ai_conf * 0.9
+                        basis = f"AI page reading (Sortify model suggested {result['category']})"
+                if ad.get("publisher_promotion"):
+                    basis += " · newspaper's own promotion"
+                ad["category"] = category
+                ad["category_confidence"] = round(float(certainty), 3)
+                ad["raw_score"] = result["confidence"]
+                ad["match_strength"] = "strong" if certainty >= 0.75 else "good" if certainty >= 0.5 else "possible"
                 ad["alternatives"] = result.get("alternatives", [])[:3]
                 ad["matched_keywords"] = result.get("matched_keywords", [])
-                ad["color"] = category_colors().get(result["category"], "#64748b")
-                ad["icon"] = CATEGORY_ICONS.get(result["category"], "🏷️")
-
-                # Additional fields for manager verification
-                raw_method = result.get("method", "lexical")
-                ad["basis"] = _METHOD_LABELS.get(raw_method, "AI + text analysis")
-                ad["flagged"] = bool(result.get("needs_review", False))
-                # OCR quality for this ad block (from the OCR confidence already on the ad dict)
-                ocr_conf = ad.get("confidence", 0)
-                ad["ocr_quality"] = "Good" if ocr_conf >= 0.7 else "Partial" if ocr_conf >= 0.4 else "Poor"
-
-                # Update summary stats
-                if ad["headline"] and len(ad["headline"].strip()) > 2:
+                ad["color"] = category_colors().get(category, "#64748b")
+                ad["icon"] = CATEGORY_ICONS.get(category, "🏷️")
+                ad["basis"] = basis
+                q = float(ad.get("ocr_quality_score", ad.get("confidence", 0)) or 0)
+                ad["ocr_quality_score"] = round(q, 3)
+                ad["ocr_quality"] = "Good" if q >= 0.75 else "Partial" if q >= 0.5 else "Poor"
+                ad["flagged"] = certainty < 0.5 or q < 0.5
+                if page_img is None:
+                    from app.page_scan import load_image
+                    page_img = load_image(raw)
+                ad["thumb"] = _thumbnail(page_img, ad["bbox"])
+                if ad.get("headline") and len(ad["headline"].strip()) > 2:
                     n_recognized += 1
                 if ad["match_strength"] in ("strong", "good"):
                     n_categorized += 1
@@ -363,6 +364,8 @@ def create_app(db_path=None, auto_refresh: bool | None = None) -> Flask:
                 "uncertain_ads": n_uncertain,
                 "page_width": scan["page_width"],
                 "page_height": scan["page_height"],
+                "engine": scan.get("engine", "local"),
+                "engine_note": scan.get("engine_note", ""),
             })
         except Exception as e:
             return jsonify(error=str(e)), 500
@@ -513,6 +516,38 @@ def _run_refresh(app: Flask, db_path):
     finally:
         db.finish_run(_refresh_state["run_id"], status, found, new, "\n".join(log), db_path)
         _refresh_state.update(running=False, result={"status": status, "new": new})
+
+def _run_page_scan(raw: bytes, engine: str | None = None) -> dict:
+    """Use the AI engine when available (or asked for), otherwise - or if it fails - the local engine."""
+    from app.page_scan import scan_page
+    note = ""
+    if engine != "local":
+        from app.ai_scan import ai_available, scan_page_ai
+        if ai_available() or engine == "ai":
+            try:
+                res = scan_page_ai(raw)
+                res["engine_note"] = "Read by AI vision"
+                return res
+            except Exception as exc:  # network, credentials, refusal... - never leave the user without a result
+                print(f"[scan] AI engine unavailable, using the local engine: {type(exc).__name__}: {exc}", flush=True)
+                note = "AI reading unavailable - read on this computer"
+    res = scan_page(raw)
+    res["engine_note"] = note or "Read on this computer"
+    return res
+
+
+def _thumbnail(img, bbox: dict, max_w: int = 260) -> str:
+    """Small JPEG of one ad (data URL) for the verification table."""
+    import base64
+    x, y, w, h = bbox["x"], bbox["y"], bbox["w"], bbox["h"]
+    crop = img.crop((max(0, x), max(0, y), min(img.width, x + w), min(img.height, y + h))).convert("RGB")
+    if crop.width > max_w:
+        crop = crop.resize((max_w, max(1, round(crop.height * max_w / crop.width))))
+    if crop.height > 360:
+        crop = crop.resize((max(1, round(crop.width * 360 / crop.height)), 360))
+    buf = io.BytesIO(); crop.save(buf, "JPEG", quality=78)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
 
 
 # ------------------------------------------------------------ helpers
